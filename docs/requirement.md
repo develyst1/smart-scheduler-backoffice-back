@@ -1,211 +1,171 @@
-# Requirement — smart-scheduler-backoffice-back (Finance & Operations API)
+# Requirement — smart-scheduler-backoffice-back (Operations API)
 
 เอกสารความต้องการเฉพาะ repo นี้ — อ้างอิงสัญญา **Option C (Ultimate)** และ
-[requirement-timeline.md](requirement-timeline.md) (entry 2026-06-29, 2026-06-28 §5)
+[requirement-timeline.md](requirement-timeline.md) (entry 2026-06-29)
 
-> **บทบาท:** API กลางด้านการเงิน/สต๊อก/ค่าจ้าง — ออกแบบให้ **consumer หลายระบบ** เรียกใช้ได้ในระยะยาว
-> (รูปแบบคล้าย Jira / Trello / Stripe-style REST) ไม่ผูกกับ UI ตัวเดียว
+> **บทบาท:** **Operations API กลาง** (สต๊อก · บัญชีเครดิต · อัตราราคา · settlement)
+> ออกแบบให้ **consumer หลายระบบ** เรียกใช้ได้ — รวม `smart-scheduler-back`, เว็บขายของ, หรือ POS อื่น
+> **ไม่ใช้** ชื่อ table/column/API ที่ผูกกับ tutoring โดยตรง (`teacher_rates`, `student_wallet`, …)
 
 ---
 
 ## 1. เป้าหมายและหลักการ
 
-### 1.1 เป้าหมายธุรกิจ
+### 1.1 เป้าหมายธุรกิจ (Smart Scheduler)
 
-- แทน **Alis To Soft** ในส่วน **สต๊อก · กระเป๋าชั่วโมง/คอร์ส · ค่าจ้างครู Freelance**
-- ให้ **`smart-scheduler-back`** (Scheduling API) และระบบอื่นในอนาคต เรียกใช้ผ่าน HTTP API
-- ทุกการเปลี่ยนแปลงเงิน/ชั่วโมง/สต๊อก → **ledger + audit** (ตรวจสอบย้อนหลังได้)
+| ความต้องการธุรกิจ | โมเดล generic ใน API นี้ |
+|-------------------|---------------------------|
+| สต๊อกน้ำ/ขนม/อุปกรณ์ | `catalog_items` + `stock_movements` |
+| กระเป๋าชั่วโมงนักเรียน | `accounts` (unit=`HOURS`) + `account_ledger` |
+| ซื้อคอร์สผ่าน LINE → admin อนุมัติ | `commercial_requests` (kind=`TOP_UP`) |
+| ตัดชั่วโมงเมื่อมาเรียนจริง | `POST /accounts/:id/debits` (service token) |
+| เรท/เพดานรายได้ Freelance | `price_rules` (kind=`HOURLY`, `CAP`) |
+| ค่าจ้างครูรายรอบ | `settlement_runs` + `settlement_lines` |
 
 ### 1.2 หลักออกแบบ API (Third-party ready)
 
 | หลัก | รายละเอียด |
 |------|------------|
-| **Resource-oriented** | `/api/v1/wallets/{id}`, `/api/v1/inventory/items`, `/api/v1/payroll/runs` |
-| **Versioned** | prefix `/api/v1` — breaking change ไป v2 ได้โดยไม่พัง consumer เก่า |
-| **Idempotent writes** | header `Idempotency-Key` สำหรับ mutation สำคัญ (ตัดสต๊อก, ตัดชั่วโมง, จ่ายเงิน) |
-| **Ready-to-use responses** | embed ชื่อนักเรียน/ครู/สินค้า — consumer ไม่ต้อง join เอง |
-| **Service auth** | JWT สำหรับ admin UI · **API key / service token** สำหรับ `smart-scheduler-back` และระบบภายนอก |
-| **Errors มาตรฐาน** | `{ error: { code, message, details? } }` เหมือน Scheduling API |
-| **Timezone** | `Asia/Bangkok` · เก็บ timestamp with time zone |
+| **Resource-oriented** | `/api/v1/parties`, `/api/v1/accounts`, `/api/v1/catalog/items`, `/api/v1/pricing/rules` |
+| **Versioned** | prefix `/api/v1` |
+| **Idempotent writes** | header/body `idempotencyKey` สำหรับ mutation สำคัญ |
+| **External linking** | `parties.external_source` + `external_ref` (เช่น `smart-scheduler` + uuid) — **ไม่** FK ไปตาราง scheduling |
+| **Service auth** | JWT admin · **service token** สำหรับ machine consumers |
+| **Errors** | `{ error: { code, message, details? } }` |
+| **Timezone** | `Asia/Bangkok` |
 
 ### 1.3 Stack (locked)
 
-- **Bun** + **Hono** + **Drizzle** + **PostgreSQL** (DB ชุดเดียวกับ Scheduling API)
-- TypeScript strict · validate ที่ route (zod) · domain ใน `services/*`
-- Export **`AppType`** จาก `index.ts` สำหรับ `hc<AppType>` ฝั่ง FE
+- **Bun** + **Hono** + **Drizzle** + **PostgreSQL**
+- PostgreSQL schema **`ops`** — แยกจากตาราง scheduling ใน `public`
+- TypeScript strict · zod ที่ route · domain ใน `services/*`
+- Export **`AppType`** จาก `index.ts`
 
 ### 1.4 DB ownership
 
-**Repo นี้ migrate เฉพาะตาราง finance/ops:**
+**Repo นี้ migrate เฉพาะ schema `ops`:**
 
-- wallet, wallet_ledger, purchase_orders (หรือเทียบเท่า)
-- inventory_items, inventory_movements
-- teacher_rates, payroll_runs, payroll_lines, expense_lines (commission, travel)
-- notification_outbox (LINE parent)
-- api_clients / service_tokens (optional phase 1)
+- `organizations`, `parties`
+- `catalog_items`, `stock_balances`, `stock_movements`
+- `accounts`, `account_ledger`
+- `commercial_requests`
+- `price_rules`
+- `settlement_runs`, `settlement_lines`
+- `notification_outbox`, `api_credentials`, `idempotency_records`
 
-**อ่านอย่างเดียว** จาก scheduling: `students`, `teachers`, `bookings` (status `ATTENDED`) —
-**ห้าม migrate** ตารางของ `smart-scheduler-back`
+**อ่านอย่างเดียว** จาก scheduling (`public.*`) ได้ใน service layer ถ้าจำเป็น — **ห้าม migrate** ตารางของ `smart-scheduler-back`
 
 ---
 
 ## 2. โดเมนหลัก
 
-### 2.1 Inventory (Mini ERP/POS)
-
-**Use case:** น้ำดื่ม, ขนม, อุปกรณ์ — รับเข้า/ขายออก/ปรับยอด
-
-| ฟังก์ชัน | รายละเอียด |
-|---------|------------|
-| สินค้า (SKU) | ชื่อ, หน่วย, ราคาขาย, reorder level (optional) |
-| รับเข้า (IN) | admin คีย์จำนวน + อ้างอิง (ใบสั่งซื้อ/หมายเหตุ) |
-| ตัดออก (OUT) | ขาย POS · หรือ **API จาก Scheduling** เมื่อ staff ตัดสต๊อกจาก flow อื่น |
-| Ledger | ทุก movement = 1 row (before/after qty, actor, ref) |
-| ตรวจสอบ | ห้าม qty ติดลบ — transaction + lock row |
-
-**API ตัวอย่าง (v1):**
+### 2.1 Catalog & inventory
 
 ```
-GET    /api/v1/inventory/items
-POST   /api/v1/inventory/items
-GET    /api/v1/inventory/items/:id
-POST   /api/v1/inventory/items/:id/movements   { type: IN|OUT|ADJUST, qty, reason, idempotencyKey }
-GET    /api/v1/inventory/items/:id/movements
-POST   /api/v1/inventory/sales                 { lines: [{ itemId, qty }], ... }  // POS batch
+GET/POST  /api/v1/catalog/items
+GET       /api/v1/catalog/items/:id
+POST      /api/v1/catalog/items/:id/movements   { direction: IN|OUT|ADJUST, quantity, ... }
+GET       /api/v1/catalog/items/:id/movements
+POST      /api/v1/commerce/sales                { lines: [{ itemId, quantity }], ... }
 ```
 
 ---
 
-### 2.2 Wallet / ชั่วโมงเรียน (Credit ledger)
+### 2.2 Parties & accounts (wallet / credits)
 
-**Use case:** นักเรียนมี “ยอดชั่วโมง/คอร์ส” ตัดเมื่อมาเรียนจริง · เติมเมื่อซื้อคอร์ส
+**Party** = ลูกค้า, ผู้ให้บริการ, vendor — ลิงก์ upstream ผ่าน `external_source` + `external_ref`
 
-**กฎสำคัญ (จาก product owner):**
+**Account** = ยอดหน่วยใดหน่วยหนึ่ง (`HOURS`, `CURRENCY`, `POINTS`) ต่อ party
 
-- ลูกค้า **ไม่ self-service ตัด/เติม** บน web scheduling — ลด chaos / interrupt
-- Flow ซื้อผ่าน **LINE ตกลงกับ admin** → admin บันทึก/อนุมัติใน backoffice → **ค่อยๆ reflect** ใน wallet
-- การตัดชั่วโมงเมื่อ **ATTENDED** มาจาก Scheduling (หรือ job อ่าน attendance) — atomic + ledger
-
-**สถานะ purchase / top-up (admin-mediated):**
+Flow เติมยอด (admin-mediated):
 
 ```
-LINE ตกลง → PENDING_APPROVAL → APPROVED → CREDITED (ledger +)
-              ↘ REJECTED
+LINE ตกลง → commercial_requests PENDING → admin approve → CREDIT ledger
 ```
 
-**การตัดชั่วโมง:**
+Flow ตัดยอด (machine):
 
 ```
-ATTENDED (scheduling) → POST /wallets/:id/deduct-hours { bookingId, hours, idempotencyKey }
-                     → ledger DEBIT + optional LINE แจ้งผู้ปกครอง
+upstream event (e.g. ATTENDED) → POST /accounts/:id/debits { amountMinor, refType, refId, idempotencyKey }
 ```
 
-**API ตัวอย่าง:**
+```
+GET/POST  /api/v1/parties
+GET       /api/v1/parties/:id
+GET/POST  /api/v1/accounts
+GET       /api/v1/accounts/:id
+GET       /api/v1/accounts/:id/ledger
+POST      /api/v1/accounts/:id/credits          admin
+POST      /api/v1/accounts/:id/debits           service token
+GET/POST  /api/v1/commercial/requests
+PATCH     /api/v1/commercial/requests/:id       { action: approve|reject }
+```
 
-```
-GET    /api/v1/wallets?studentId=
-GET    /api/v1/wallets/:id
-GET    /api/v1/wallets/:id/ledger?page=
-POST   /api/v1/wallets/:id/top-ups          { hours, amountMinor, source, note }  // admin only
-POST   /api/v1/wallets/:id/deduct-hours     { bookingId, hours, idempotencyKey }  // service token
-POST   /api/v1/purchase-intents             { studentId, package, lineRef }       // จาก LINE webhook → pending
-PATCH  /api/v1/purchase-intents/:id         { action: approve|reject }
-```
+**Smart Scheduler mapping:** สร้าง `party` ต่อ student/teacher ด้วย `external_source=smart-scheduler`; account unit `HOURS` = ชั่วโมงเรียน
 
 ---
 
-### 2.3 Payroll & รายจ่ายครู (Freelance / Part-time)
+### 2.3 Pricing & settlement
 
-**Use case:** คำนวณรายได้ครู Freelance · ค่าคอม · ค่ารถ · สรุปรอบ (สัปดาห์/เดือน)
-
-| รายการ | แหล่งข้อมูล |
-|--------|-------------|
-| ชั่วโมงสอนจริง | อ่าน `bookings` status `ATTENDED` + teacherId |
-| เรท/ชม. | `teacher_rates` (backoffice owns) — Scheduling FE **ดึงเรท** ผ่าน API นี้ |
-| ค่าคอม / ค่ารถ | expense line ต่อคาบหรือต่อรอบ payroll |
-| Income cap | ส่ง `monthlyIncome`, `incomeLimit` ให้ Scheduling ใช้ auto-disable Freelance |
-
-**API ตัวอย่าง:**
+**Price rules** = rate card ทั่วไป (ชม., คงที่, %, cap) — ไม่ใช่ `teacher_rates`
 
 ```
-GET    /api/v1/teachers/:id/rates
-PUT    /api/v1/teachers/:id/rates          { hourlyRateMinor, incomeLimitMinor, ... }
-GET    /api/v1/payroll/runs?period=
-POST   /api/v1/payroll/runs                { from, to }   // สร้าง draft
-GET    /api/v1/payroll/runs/:id
-PATCH  /api/v1/payroll/runs/:id            { action: finalize|void }
-GET    /api/v1/teachers/:id/income-summary?month=   // สำหรับ scheduling FE
+GET/POST  /api/v1/pricing/rules
+GET       /api/v1/pricing/rules/:id
 ```
 
----
-
-### 2.4 Reports & aggregates (สำหรับ FE + export)
+**Settlement** (payroll-like) — wave ถัดไป:
 
 ```
-GET /api/v1/reports/pnl?from=&to=&businessUnit=     // รายได้-รายจ่ายรวม
-GET /api/v1/reports/inventory/valuation
-GET /api/v1/reports/wallet/summary
-GET /api/v1/reports/payroll/summary
+POST/GET  /api/v1/settlement/runs
+GET       /api/v1/settlement/runs/:id/lines
+PATCH     /api/v1/settlement/runs/:id           finalize|void
 ```
-
-รองรับ **หลายกิจการ (business unit)** ในอนาคต — field `businessUnitId` optional ตั้งแต่ schema v1
 
 ---
 
 ## 3. Integration กับ Scheduling API
 
-`smart-scheduler-back` เป็น **consumer หลัก** (service-to-service):
+`smart-scheduler-back` เป็น consumer หลัก:
 
-| เมื่อ | เรียก Backoffice API |
+| เมื่อ | เรียก Operations API |
 |------|----------------------|
-| ยืนยันว่ามาเรียน (ATTENDED) | `deduct-hours` (idempotent ต่อ bookingId) |
-| ต้องการเรทครู / income cap | `GET teachers/:id/rates` หรือ `income-summary` |
-| Staff ขายสินค้าจาก flow การจอง (optional) | `POST inventory/sales` |
-| ตรวจ wallet ก่อนจอง voucher/course (optional) | `GET wallets?studentId=` |
+| ATTENDED | `POST /accounts/:id/debits` (idempotent ต่อ booking ref) |
+| ต้องการเรท/cap | `GET /pricing/rules?partyId=` (party = teacher ที่ link แล้ว) |
+| ขายสินค้า (optional) | `POST /commerce/sales` |
+| ตรวจยอดก่อนจอง | `GET /accounts?partyId=` |
 
-**ห้าม:** Scheduling API migrate ตาราง finance · **ห้าม:** browser เรียก Backoffice โดยตรง (ผ่าน server หรือ BFF ถ้าจำเป็น)
+**ห้าม:** browser เรียก Operations API โดยตรง · **ห้าม:** migrate ตาราง scheduling
 
 ---
 
 ## 4. LINE & notifications
 
-- แจ้ง **ผู้ปกครอง** เมื่อตัดชั่วโมง / เติม package (หลัง admin approve)
-- **Outbox + retry + idempotent** — เหมือน Scheduling API
-- LINE Messaging API only (Notify ปิดแล้ว)
+- Outbox + retry + idempotent
+- LINE Messaging API only
 
 ---
 
 ## 5. Security
 
-- Admin JWT (backoffice FE)
-- Service token scoped: `inventory:write`, `wallet:deduct`, `rates:read`
-- Rate limit + audit log ทุก mutation
-- เงิน/ชั่วโมง = **integer minor units** · mutation ใน **transaction** เท่านั้น
+- Admin JWT (backoffice FE) · `SKIP_ADMIN_AUTH=true` ใน dev
+- Service token: `Authorization: Bearer` หรือ `X-Service-Token`
+- Integer minor units · mutation ใน transaction
 
 ---
 
-## 6. Non-goals (v1)
+## 6. Deliverables (ลำดับ implement)
 
-- ลูกค้า self-service ซื้อ/ตัด wallet บน scheduling web
-- Public OAuth marketplace สำหรับ third party ภายนอก (เตรียม API key พอใน v1)
-- บัญชี GAAP เต็มรูปแบบ / ใบกำกับภาษี (อนาคต)
-
----
-
-## 7. Deliverables ตามลำดับ (แนะนำ)
-
-1. Scaffold Bun/Hono + health + auth stub + `AppType`
-2. Inventory CRUD + movements ledger
-3. Wallet + ledger + admin top-up
-4. Service token + `deduct-hours` สำหรับ Scheduling
-5. Teacher rates + income summary API
-6. Payroll run (draft → finalize)
-7. Reports aggregate · LINE outbox worker
+1. ✅ Scaffold + health + auth stub + `AppType`
+2. ✅ Catalog/inventory v1
+3. ✅ Parties + accounts + commercial requests + pricing rules (CRUD พื้นฐาน)
+4. ⬜ Settlement runs
+5. ⬜ Reports · LINE worker · idempotency middleware · JWT จริง
 
 ---
 
 ## อ้างอิง
 
-- [CLAUDE.md](../CLAUDE.md) — layout & conventions
-- [todo.md](../todo.md) — งาน implement รายข้อ
-- Workspace [CLAUDE.md](../../CLAUDE.md) · [mastertodo.md](../../mastertodo.md)
+- [CLAUDE.md](../CLAUDE.md)
+- [todo.md](../todo.md)
+- Workspace [CLAUDE.md](../../CLAUDE.md)
