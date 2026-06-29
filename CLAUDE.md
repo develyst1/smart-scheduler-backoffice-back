@@ -7,7 +7,7 @@ workspace root `../CLAUDE.md`. This repo is **greenfield**.
 
 The **backoffice backend** — the **Finance API** that powers `smart-scheduler-backoffice-front`.
 Its job is to **retire "Alis To Soft"**: student wallet / hour deduction, inventory, and teacher
-payroll. **Phase 2.** It reads scheduling data the **Scheduling API** writes.
+payroll. **Option C** build wave 2. It reads scheduling data the **Scheduling API** writes.
 
 > Spec (Thai): **[docs/requirement-timeline.md](docs/requirement-timeline.md)** (living spec,
 > latest entry §3–§5; synced from workspace root `docs/`).

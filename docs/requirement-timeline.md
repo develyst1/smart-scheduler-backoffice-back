@@ -16,7 +16,20 @@
 
 ---
 
-## 2026-06-28 — ฟีเจอร์รอบล่าสุด (Calendar/CRM/LINE OA/Backoffice — Option C)  ⭐ ยึดอันนี้
+## 2026-06-29 — ยืนยันขอบเขตสัญญา: Option C (Ultimate)  ⭐ ยึดอันนี้
+> ที่มา: confirm กับลูกค้า (คุณฟีน) / ทีมพัฒนา
+
+- ลูกค้าเลือกและชำระมัดจำ **Option C: Ultimate Version** (73,000 บาท) ตาม [start_phase.md](../start_phase.md)
+- **ขอบเขตสัญญาเดียว (Option C)** ครอบคลุมทั้ง 4 deployables — ไม่ใช่ “Phase 1 = Option B แล้วค่อย Option C ทีหลัง”
+- ประกอบด้วย:
+  - **Scheduling (Option B baseline):** ปฏิทิน 09:00–18:00, จอง 4 ประเภท, Policy Lock, LINE แจ้งครู, รายงานรายวัน, จัดการครู
+  - **Inventory (จาก proposal Option C):** Mini ERP/POS — รับของเข้า / ตัดสต๊อกเมื่อขาย
+  - **รายการ 2026-06-28 ด้านล่าง:** conflict resolution, QR/LINE check-in, CRM, LINE OA, Backoffice API อิสระ, wallet/payroll ตาม timeline
+- **ลำดับส่งมอบ (build wave):** scheduling front+back ก่อน (มีโค้ดแล้ว) → backoffice inventory/finance ตาม — แต่ทั้งหมดอยู่ในสัญญา Option C เดียวกัน
+
+---
+
+## 2026-06-28 — ฟีเจอร์รอบล่าสุด (Calendar/CRM/LINE OA/Backoffice — Option C)
 > ที่มา: requirement2 (เดิม `smart-scheduler-front/requirement2.md`)
 
 
