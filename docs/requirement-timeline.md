@@ -16,6 +16,17 @@
 
 ---
 
+## 2026-06-29 — Backoffice: Finance API + Admin UI (ออกแบบ Option C)
+> ที่มา: product owner / ทีมพัฒนา
+
+- **Backoffice Backend** (`smart-scheduler-backoffice-back`): Bun + Hono API แบบ third-party (REST `/api/v1`, idempotency, service token) — สต๊อก, wallet/ledger, เรทครู, payroll (commission/ค่ารถ), reports
+- **Backoffice Frontend** (`smart-scheduler-backoffice-front`): Next.js + Mantine **dark theme เทา-ดำ** — รายงาน + admin workflow (ไม่ self-service wallet บน scheduling web)
+- **Flow ซื้อคอร์ส:** ตกลงทาง LINE → admin approve ใน backoffice → เติม wallet → staff จองให้บน frontoffice
+- **Integration:** `smart-scheduler-back` เรียก API ตัดชั่วโมงเมื่อ ATTENDED · ดึงเรทครู · ตัดสต๊อก (optional)
+- เอกสารรายละเอียด: `smart-scheduler-backoffice-back/docs/requirement.md` + `smart-scheduler-backoffice-front/docs/requirement.md`
+
+---
+
 ## 2026-06-29 — ยืนยันขอบเขตสัญญา: Option C (Ultimate)  ⭐ ยึดอันนี้
 > ที่มา: confirm กับลูกค้า (คุณฟีน) / ทีมพัฒนา
 

@@ -5,10 +5,10 @@
 
 ## ไฟล์ในชุดนี้ (มีเหมือนกันทุก repo)
 
-1. **[requirement-timeline.md](requirement-timeline.md)** — ⭐ แหล่งความต้องการล่าสุด (living spec)
-   จัดเป็น timeline เรียงใหม่→เก่า **entry บนสุดคือล่าสุดและยึดอันนั้นเมื่อขัดกัน**
-   มี requirement ใหม่ ให้เพิ่ม entry ไว้บนสุดในไฟล์นี้ที่เดียว
-2. **README.md** — ไฟล์นี้ (index)
+1. **[requirement-timeline.md](requirement-timeline.md)** — ⭐ living spec (sync จาก root)
+2. **[requirement.md](requirement.md)** — ⭐ ความต้องการเฉพาะ Finance API repo นี้
+3. **README.md** — ไฟล์นี้
+4. **[todo.md](../todo.md)** — งาน implement
 
 ## เอกสารอ้างอิง (เก็บที่ root `H:\scheduler\docs\` เท่านั้น ไม่ sync ลง repo)
 
