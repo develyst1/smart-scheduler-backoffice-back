@@ -9,7 +9,8 @@ The **backoffice backend** — the **Finance API** that powers `smart-scheduler-
 Its job is to **retire "Alis To Soft"**: student wallet / hour deduction, inventory, and teacher
 payroll. **Phase 2.** It reads scheduling data the **Scheduling API** writes.
 
-> Spec (Thai): [req2.md](../smart-scheduler-front/req2.md) §3.2 & §4 (wins on conflict).
+> Spec (Thai): **[docs/requirement-timeline.md](docs/requirement-timeline.md)** (living spec,
+> latest entry §3–§5; synced from workspace root `docs/`).
 
 ## Stack
 
