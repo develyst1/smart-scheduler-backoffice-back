@@ -48,7 +48,7 @@
 
 - [x] 🟡 **[BE] Schema** — `price_rules`, `settlement_*` (schema only)
 - [x] ✅ **[BE] `GET/POST /pricing/rules`**
-- [ ] ❌ **[BE] Settlement runs API**
+- [ ] ❌ **[BE] Settlement runs API** — รองรับเรทหลายแบบ: PRIVATE 500, GROUP_CAMP 625/1250, ECA รายคน (ดู `docs/teacher-roster-payroll.md` § 2.3)
 - [ ] ❌ **[BE] Income summary aggregate** (สำหรับ scheduling FE cap)
 - [ ] ❌ **[SCH] Scheduling FE** — แทน mock rate/cap
 
@@ -65,7 +65,9 @@
 
 ## ลำดับถัดไป
 
-1. `db:generate` + `db:migrate` + `db:seed` บน shared PG  
-2. Wire `smart-scheduler-back` → debit + pricing read  
-3. Settlement + reports  
-4. backoffice-front scaffold
+1. **Master data** — seed โปรแกรม + ครู 23 คน ([docs/teacher-roster-payroll.md](docs/teacher-roster-payroll.md))
+2. `db:generate` + `db:migrate` + `db:seed` บน shared PG  
+3. Wire `smart-scheduler-back` → debit + pricing read  
+4. Settlement runs API (payroll 3 ประเภทครู) + commission per SKU  
+5. Reports  
+6. backoffice-front scaffold

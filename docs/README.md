@@ -1,33 +1,46 @@
-# docs/ — เอกสารประกอบความเข้าใจโปรเจค (Smart Tutoring Scheduler)
+# docs/ — เอกสารประกอบความเข้าใจโปรเจค (Smart Scheduler)
 
-เอกสารสเปคของโปรเจค **ใช้ชุดเดียวกันทุก repo** เพื่อให้ทั้งคนและ AI อ่านเข้าใจบริบทธุรกิจ
-ได้ก่อนลงมือทำงาน โดยไม่ต้องข้ามไปอ่านโฟลเดอร์อื่น
+เอกสารสเปคของโปรเจค **ใช้ชุดเดียวกันทุก repo** เพื่อให้ทั้งคนและ AI อ่านเข้าใจบริบทธุรกิจได้ก่อนลงมือทำงาน
 
-## ไฟล์ในชุดนี้ (มีเหมือนกันทุก repo)
+> **ต้นฉบับอยู่ที่ `smart-scheduler/docs/` (root monorepo)** — สำเนาในแต่ละ repo (`<repo>/docs/`) sync มาจาก root  
+> **แก้ที่ root แล้ว copy/sync ลงทุก repo** อย่าแก้แยกในแต่ละ repo เพราะจะ drift
 
-1. **[requirement-timeline.md](requirement-timeline.md)** — ⭐ living spec (sync จาก root)
-2. **[requirement.md](requirement.md)** — ⭐ ความต้องการเฉพาะ Finance API repo นี้
-3. **README.md** — ไฟล์นี้
-4. **[todo.md](../todo.md)** — งาน implement
+---
 
-## เอกสารอ้างอิง (เก็บที่ root `H:\scheduler\docs\` เท่านั้น ไม่ sync ลง repo)
+## อ่านก่อนลงมือ (สำหรับ AI agent)
 
-- `propasal.md` — ข้อเสนอเชิงพาณิชย์ 3 ทางเลือก (A Lite / B Standard / C Ultimate)
-- `start_phase.md` — สรุปมัดจำงวดที่ 1 (**ลูกค้าเลือก Option C** — ยืนยันแล้ว 2026-06-29)
-- `pdf/` — ไฟล์ PDF ต้นฉบับ
+| ลำดับ | ไฟล์ | เนื้อหา |
+|------|------|---------|
+| 1 | **[business-domain.md](business-domain.md)** | ธุรกิจจริงของลูกค้า · แมปกับระบบ · gap ระหว่าง seed กับของจริง |
+| 2 | **[product-catalog-pricing.md](product-catalog-pricing.md)** | โปรแกรม/แพ็กเกจ/ราคาขาย (จาก rate card ลูกค้า) |
+| 3 | **[teacher-roster-payroll.md](teacher-roster-payroll.md)** | รายชื่อครู 3 ประเภท + กฎค่าจ้าง/คอม |
+| 4 | **[monorepo-overview.md](monorepo-overview.md)** | สถาปัตยกรรม 4 repo · สถานะ implement · งานถัดไป |
+| 5 | **[requirement-timeline.md](requirement-timeline.md)** | ⭐ living spec — entry บนสุดคือล่าสุด |
+
+## ไฟล์เฉพาะ repo (ไม่ sync)
+
+| Repo | ไฟล์เพิ่ม |
+|------|-----------|
+| `smart-scheduler-backoffice-back` | `requirement.md` — Operations API spec |
+| `smart-scheduler-backoffice-front` | `requirement.md` — Backoffice UI spec |
+| ทุก repo | `../todo.md` — task list เฉพาะ repo |
+
+## เอกสารอ้างอิง (root monorepo)
+
+| ไฟล์ | คำอธิบาย |
+|------|----------|
+| `chat-requirement-detail.md` | ข้อความดิบจากลูกค้า (ครู + payroll) — ingest แล้วใน `teacher-roster-payroll.md` |
+| `S__74989580.jpg` | รูป rate card โปรแกรม/ราคา — ingest แล้วใน `product-catalog-pricing.md` |
+| `../CLAUDE.md` | คู่มือ monorepo สำหรับ AI agent |
 
 ## ขอบเขตสัญญา (ยืนยันแล้ว)
 
-**Option C (Ultimate)** เป็นขอบเขตเดียวของโปรเจค — ครอบคลุม scheduling + inventory +
-รายการใน requirement-timeline (CRM, LINE OA, backoffice API ฯลฯ) ทั้ง 4 repo อยู่ในสัญญานี้
-ลำดับส่งมอบ: scheduling ก่อน → backoffice ตาม (ดู entry 2026-06-29 ใน timeline)
-
-## วิธีดูแล (สำคัญ)
-
-- ต้นฉบับอยู่ที่ **root `H:\scheduler\docs\`** สำเนาในแต่ละ repo (`<repo>/docs/`) sync มาจาก root
-  **แก้ที่ root แล้ว sync ลง** อย่าแก้แยกในแต่ละ repo เพราะจะ drift
-- `todo.md` ใน `smart-scheduler-front` เป็น task list เฉพาะ repo นั้น (ไม่ sync ข้าม)
+**Option C (Ultimate)** — ครอบคลุม scheduling + inventory + CRM/LINE OA + backoffice ทั้ง 4 deployables  
+มัดจำ 73,000 บาท ยืนยัน 2026-06-29 · ลำดับส่งมอบ: scheduling ก่อน → backoffice ตาม
 
 ## คำถามธุรกิจที่ยังเปิดอยู่
 
-- `MAX_WEEK_BY_SIZE` คอร์ส 6 ครั้ง โค้ดไว้ week 8 แต่สเปคฟิกแค่ 4→week5, 10→week13
+- `MAX_WEEK_BY_SIZE` คอร์ส 6 ชม. โค้ดไว้ week 8 แต่สเปคฟิกแค่ 4→week5, 10→week13
+- เรทชม. / base salary / ค่าคอมต่อ SKU — ลูกค้ายังไม่ส่งตัวเลขรายคน (มีแค่กฎทั่วไป)
+- โปรแกรมใน rate card บางรายการใช้แพ็ก 4/6/10 ชม. ไม่ตรงกับ seed (คณิต/ฟิสิกส์) — ต้อง migrate master data
+- Voucher 5/10/15 ชม. ในระบบ vs แพ็ก 1/4/6/10 ชม. ใน rate card — ต้อง confirm กับลูกค้า

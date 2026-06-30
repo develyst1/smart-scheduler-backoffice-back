@@ -16,18 +16,81 @@
 
 ---
 
-## 2026-06-29 — Backoffice: Finance API + Admin UI (ออกแบบ Option C)
-> ที่มา: product owner / ทีมพัฒนา
+## 2026-06-30 (11:25) — เรทค่าสอน Freelance + Group/Camp/ECA  ⭐ ยึดอันนี้ (payroll detail)
+> ที่มา: ข้อความลูกค้า (`chat-requirement-detail.md` 11:25)
 
-- **Backoffice Backend** (`smart-scheduler-backoffice-back`): Bun + Hono API แบบ third-party (REST `/api/v1`, idempotency, service token) — สต๊อก, wallet/ledger, เรทครู, payroll (commission/ค่ารถ), reports
-- **Backoffice Frontend** (`smart-scheduler-backoffice-front`): Next.js + Mantine **dark theme เทา-ดำ** — รายงาน + admin workflow (ไม่ self-service wallet บน scheduling web)
-- **Flow ซื้อคอร์ส:** ตกลงทาง LINE → admin approve ใน backoffice → เติม wallet → staff จองให้บน frontoffice
-- **Integration:** `smart-scheduler-back` เรียก API ตัดชั่วโมงเมื่อ ATTENDED · ดึงเรทครู · ตัดสต๊อก (optional)
-- เอกสารรายละเอียด: `smart-scheduler-backoffice-back/docs/requirement.md` + `smart-scheduler-backoffice-front/docs/requirement.md`
+### หลักการ
+- ค่าสอน **ล็อคกับตัวครู** และ **แอดมินแก้มือได้** (backoffice)
+- รายละเอียดเต็ม → [teacher-roster-payroll.md](teacher-roster-payroll.md) § 2.3
+
+### Freelance — Private 1:1
+- ค่าเริ่มต้น: **500 บาท/ชม.**
+- Exception: **ครูโต๊ด** วันธรรมดา (จ–ศ): **400 บาท/ชม.**  
+  (⚠️ โต๊ดอยู่ในรายชื่อ Part-Time — confirm กับลูกค้า)
+
+### Group / Camp (เหมาช่วง)
+- ครึ่งวัน (เช้าหรือบ่าย): **625 บาท**
+- เต็มวัน: **1,250 บาท**
+
+### ECA (สอนในโรงเรียน)
+- เรทชม. **กำหนดรายคนต่อครู** — ระบบต้องรองรับตั้งค่าแต่ละคน
+
+### Implement hint
+- `ops.price_rules` ต่อ `party` (ครู) หลาย rule ต่อคน แยกด้วย `metadata.teachingMode`
+- Booking ควรมี context ประเภทการสอน (`PRIVATE` / `GROUP_CAMP_HALF` / `GROUP_CAMP_FULL` / `ECA`) เพื่อคิด settlement
 
 ---
 
-## 2026-06-29 — ยืนยันขอบเขตสัญญา: Option C (Ultimate)  ⭐ ยึดอันนี้
+## 2026-06-30 — ธุรกิจจริง + รายชื่อครู + Payroll + Rate Card (โดเมน)
+> ที่มา: ข้อความลูกค้า (`chat-requirement-detail.md`) + รูป rate card (`S__74989580.jpg`)
+
+### ธุรกิจจริง (สำคัญ — แทนที่บริบท "กวดวิชา" ในเอกสารเก่า)
+
+ลูกค้าดำเนินธุรกิจ **ศูนย์ฝึกทักษะการทรงตัวและกีฬาล้อ** (Bike, Scooter, Surfskate, Skateboard, Onewheel, Balance Play ฯลฯ)
+ไม่ใช่สถาบันกวดวิชาวิชาการ — รายละเอียดเต็มใน [business-domain.md](business-domain.md) และ [product-catalog-pricing.md](product-catalog-pricing.md)
+
+- โปรแกรมในระบบแมปกับตาราง `subjects` (ชื่อเดิมในโค้ด)
+- แพ็กเรียน 1/4/6/10 ชม. ตาม rate card · เช่าอุปกรณ์รายชั่วโมง
+- **Seed ปัจจุบัน (คณิต/ฟิสิกส์, ครู demo) เป็น placeholder** — ต้องแทนด้วย master data จริง
+
+### รายชื่อครู 23 คน (3 ประเภท)
+
+| ประเภท | จำนวน | รายชื่อ |
+|--------|-------|---------|
+| Full-Time | 7 | เอก, แบงค์, ฮาริส, ข้าวจ้าว, แคมป์, เลวิส |
+| Part-Time | 8 | ปริ้นท์, กานต์, ซีด, เจย์, คิด, นิว, โต๊ด |
+| Freelance | 8 | มาร์ค, โจ้, เก่ง, ต๊าบ, มุ, จิ, เนย์, กอล์ฟ |
+
+รายละเอียด → [teacher-roster-payroll.md](teacher-roster-payroll.md)
+
+### กฎ Payroll (สรุป — เงินออกสิ้นเดือนพร้อมกันทุกประเภท)
+
+**Full-Time:** Base salary (รายคนไม่เท่ากัน) + ชม.สอนเกิน (วันธรรมดา >4ชม./วัน, เสาร์-อาทิตย์ >5ชม./วัน → **350 บาท/ชม.**) + ค่าน้ำมันนอกสถานที่ + OT
+
+**Part-Time:** เหมาวันเสาร์-อาทิตย์ · วันธรรมดา = รายชั่วโมง (เรทรายคนไม่เท่ากัน)
+
+**Freelance:** รายชั่วโมงตามสอนจริง (เรทรายคนไม่เท่ากัน) + ค่าคอมขายสินค้า (แต่ละ SKU ไม่เท่ากัน)
+
+**Implement เป้าหมาย:** `ops.settlement_runs` + backoffice UI payroll — ดู [teacher-roster-payroll.md](teacher-roster-payroll.md) § แมประบบ
+
+### Rate Card โปรแกรม/ราคาขาย
+
+อ้างอิงรูป `S__74989580.jpg` — ตารางราคาเต็มใน [product-catalog-pricing.md](product-catalog-pricing.md)
+
+### คำถามเปิด (รอ confirm ลูกค้า)
+
+- เรท Part-Time / base salary FT / ค่าคอม **รายคนราย SKU** ยังไม่ครบ (Freelance Private/Group/ECA ได้บางส่วนแล้ว — ดู entry 11:25)
+- ครูโต๊ด (Part-Time) ทำไมอยู่ในกฎเรท Freelance Private — confirm
+- Voucher 5/10/15 ชม. ในโค้ด vs แพ็ก 1/4/6/10 ชม. ใน rate card — ใช้แบบไหน?
+- คอร์ส 6 ชม. ขยายสูงสุด week 8 (assumption ในโค้ด) — ยืนยันกับลูกค้า
+
+### เอกสารสำหรับ agent ถัดไป
+
+อ่าน [monorepo-overview.md](monorepo-overview.md) + [docs/README.md](README.md) ก่อนลงมือ
+
+---
+
+## 2026-06-29 — ยืนยันขอบเขตสัญญา: Option C (Ultimate)
 > ที่มา: confirm กับลูกค้า (คุณฟีน) / ทีมพัฒนา
 
 - ลูกค้าเลือกและชำระมัดจำ **Option C: Ultimate Version** (73,000 บาท) ตาม [start_phase.md](../start_phase.md)

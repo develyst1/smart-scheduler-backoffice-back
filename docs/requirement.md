@@ -109,6 +109,17 @@ PATCH     /api/v1/commercial/requests/:id       { action: approve|reject }
 
 **Price rules** = rate card ทั่วไป (ชม., คงที่, %, cap) — ไม่ใช่ `teacher_rates`
 
+**Settlement / Payroll (2026-06-30)** — กฎจากลูกค้าใน [teacher-roster-payroll.md](teacher-roster-payroll.md):
+
+| ประเภทครู | องค์ประกอบรายได้ |
+|-----------|------------------|
+| FULL_TIME | base (FIXED rule) + OT ชม.เกิน (350฿/ชม. หลัง 4ชม. จ-ศ / 5ชม. ส-อ) + ค่าน้ำมัน + OT งาน |
+| PART_TIME | เหมาวันเสาร์-อาทิตย์ · รายชม. วันธรรมดา |
+| FREELANCE | HOURLY ตามสอนจริง + COMMISSION ต่อ SKU จาก `commerce/sales` |
+
+**Freelance rate detail (11:25):** Private 500฿/ชม. (โต๊ด weekday 400) · Group/Camp 625/1250 · ECA รายคน — ล็อคกับครู แก้มือได้  
+→ [teacher-roster-payroll.md](teacher-roster-payroll.md) § 2.3
+
 ```
 GET/POST  /api/v1/pricing/rules
 GET       /api/v1/pricing/rules/:id
