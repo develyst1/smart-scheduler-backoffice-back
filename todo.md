@@ -1,9 +1,13 @@
 # TODO — smart-scheduler-backoffice-back
 
-งาน implement ตาม [docs/requirement.md](docs/requirement.md) · สัญญา **Option C** · **Operations API กลาง (generic `ops` schema)**
+งาน implement ตาม [docs/requirement-timeline.md](docs/requirement-timeline.md) · สัญญา **Option C** · **Operations API กลาง (generic `ops` schema)**
 
-> สถานะ: ✅ เสร็จ · 🟡 บางส่วน · ❌ ยังไม่มี  
+> สถานะ: ✅ เสร็จ · 🟡 บางส่วน · ❌ ยังไม่มี · อัปเดต 2026-06-30
 > **[BE]** repo นี้ · **[SCH]** `smart-scheduler-back` consumer · **[FE]** backoffice-front
+>
+> **สถานะล่าสุด:** scaffold + catalog/inventory + parties/accounts/commercial + pricing rules ✅ ·
+> 1 migration (`0000`) · `bun test` (money) · **ยังไม่ wire** ฝั่ง scheduling (debit ตอน ATTENDED / อ่านเรทครู)
+> และ backoffice-front ยังไม่เริ่ม · DB shared ตอนนี้ live (remote) → รัน `db:migrate` + `db:seed` ได้แล้ว
 
 ---
 
