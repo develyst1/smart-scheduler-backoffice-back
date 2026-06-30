@@ -29,7 +29,7 @@
 - [x] ✅ **[BE] `GET/POST /api/v1/catalog/items`**
 - [x] ✅ **[BE] `POST .../items/:id/movements`**
 - [x] ✅ **[BE] `POST /api/v1/commerce/sales`**
-- [x] ✅ **[BE] Seed** — org default + SKU ตัวอย่าง + demo party
+- [x] ✅ **[BE] Seed** — org default + SKU ตัวอย่าง + demo party + **teacher parties + freelance price_rules** (sync จาก `public.teachers`)
 - [ ] ❌ **[SCH] Client ใน scheduling-back** — optional v1
 
 ---
@@ -46,7 +46,7 @@
 
 ## Wave 3 — Pricing & settlement
 
-- [x] 🟡 **[BE] Schema** — `price_rules`, `settlement_*` (schema only)
+- [x] 🟡 **[BE] Schema** — `price_rules`, `settlement_*` (schema only) · seed เรท Freelance + exception โต๊ด
 - [x] ✅ **[BE] `GET/POST /pricing/rules`**
 - [ ] ❌ **[BE] Settlement runs API** — รองรับเรทหลายแบบ: PRIVATE 500, GROUP_CAMP 625/1250, ECA รายคน (ดู `docs/teacher-roster-payroll.md` § 2.3)
 - [ ] ❌ **[BE] Income summary aggregate** (สำหรับ scheduling FE cap)
@@ -65,7 +65,7 @@
 
 ## ลำดับถัดไป
 
-1. **Master data** — seed โปรแกรม + ครู 23 คน ([docs/teacher-roster-payroll.md](docs/teacher-roster-payroll.md))
+1. ~~**Master data** — seed โปรแกรม + ครู~~ ✅ (scheduling + ops parties/price_rules)
 2. `db:generate` + `db:migrate` + `db:seed` บน shared PG  
 3. Wire `smart-scheduler-back` → debit + pricing read  
 4. Settlement runs API (payroll 3 ประเภทครู) + commission per SKU  
