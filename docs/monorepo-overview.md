@@ -32,7 +32,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | **บทบาท** | Source of truth: ครู, นักเรียน, จอง, ลา, LINE push |
 | **ความสำเร็จ** | ~75% — 17 API endpoints, conflict resolution, recurring course, voucher, JWT |
 | **เหลือ** | C.1–C.5 (QR/LINE/CRM/cron), D.1 (wire backoffice) |
-| **เริ่มอ่าน** | `CLAUDE.md`, `todo.md`, `src/services/scheduler.service.ts` |
+| **เริ่มอ่าน** | `CLAUDE.md`, `src/services/scheduler.service.ts` (งาน/สโคป: requirement repo) |
 
 ### smart-scheduler-front (Staff Web)
 
@@ -43,7 +43,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | **บทบาท** | ปฏิทิน staff แทน Excel — จอง, เช็คอินมือ, รายงาน |
 | **ความสำเร็จ** | ~70% — เชื่อม API จริง + auth |
 | **เหลือ** | ฟอร์มสมัครคอร์ส/voucher (BE พร้อม), รอ C.* จาก BE |
-| **เริ่มอ่าน** | `CLAUDE.md`, `todo.md`, `src/components/partials/Calendar/` |
+| **เริ่มอ่าน** | `CLAUDE.md`, `src/components/partials/Calendar/` (งาน/สโคป: requirement repo) |
 
 ### smart-scheduler-backoffice-back (Operations API)
 
@@ -63,7 +63,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | **Stack** | (planned) Next 16 + Mantine dark theme |
 | **บทบาท** | สต๊อก, wallet, payroll, รายงาน — แทน Alis To Soft |
 | **ความสำเร็จ** | 0% — `src/` ว่าง, มีแค่ docs |
-| **เริ่ม** | Wave 0 scaffold ตาม `todo.md` |
+| **เริ่ม** | Wave 0 scaffold — สโคปดูที่ repo `smart-scheduler-requirement` (requirement.html) |
 
 ---
 
@@ -165,4 +165,4 @@ cd smart-scheduler-backoffice-back && bunx drizzle-kit migrate && bun run db:see
 2. [product-catalog-pricing.md](product-catalog-pricing.md)
 3. [teacher-roster-payroll.md](teacher-roster-payroll.md)
 4. [requirement-timeline.md](requirement-timeline.md) — entry บนสุดชนะ
-5. `<repo>/CLAUDE.md` + `<repo>/todo.md`
+5. `<repo>/CLAUDE.md` + `smart-scheduler-requirement/requirement.html`

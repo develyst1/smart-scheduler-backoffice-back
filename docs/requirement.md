@@ -178,5 +178,5 @@ PATCH     /api/v1/settlement/runs/:id           finalize|void
 ## อ้างอิง
 
 - [CLAUDE.md](../CLAUDE.md)
-- [todo.md](../todo.md)
+- งาน/สโคป: repo `smart-scheduler-requirement` (requirement.html)
 - Workspace [CLAUDE.md](../../CLAUDE.md)

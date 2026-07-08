@@ -8,7 +8,10 @@ Guides Claude Code in this repo. Cross-repo map: workspace root `../CLAUDE.md`.
 tutoring-specific names. Powers `smart-scheduler-backoffice-front` and any upstream app
 (`smart-scheduler-back`, future e-commerce, POS) via HTTP.
 
-> Spec: **[docs/requirement.md](docs/requirement.md)** · tasks: **[todo.md](todo.md)**
+> Spec: **[docs/requirement.md](docs/requirement.md)**. **Tasks/scope live in the
+> `smart-scheduler-requirement` repo, not a `todo.md`** (todo files were removed 2026-07-08 — do not
+> recreate them): open `smart-scheduler-requirement/requirement.html` and treat `Partial` / `Planned`
+> items as the work queue. See root `../CLAUDE.md` §"How work is assigned".
 
 ## Stack
 

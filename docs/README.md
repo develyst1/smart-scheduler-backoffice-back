@@ -23,7 +23,7 @@
 |------|-----------|
 | `smart-scheduler-backoffice-back` | `requirement.md` — Operations API spec |
 | `smart-scheduler-backoffice-front` | `requirement.md` — Backoffice UI spec |
-| ทุก repo | `../todo.md` — task list เฉพาะ repo |
+| ทุก repo | *(ลบ todo.md แล้ว 2026-07-08)* งาน/สโคปดูที่ repo `smart-scheduler-requirement` → requirement.html |
 
 ## เอกสารอ้างอิง (root monorepo)
 
