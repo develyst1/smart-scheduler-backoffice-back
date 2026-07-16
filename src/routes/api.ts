@@ -4,6 +4,7 @@ import { partyRoutes } from "./parties";
 import { accountRoutes } from "./accounts";
 import { commercialRoutes } from "./commercial";
 import { pricingRoutes } from "./pricing";
+import { reportRoutes } from "./reports";
 
 /** Versioned public API — resource names are domain-neutral. */
 export const v1 = new Hono()
@@ -12,6 +13,7 @@ export const v1 = new Hono()
   .route("/parties", partyRoutes)
   .route("/accounts", accountRoutes)
   .route("/commercial", commercialRoutes)
-  .route("/pricing", pricingRoutes);
+  .route("/pricing", pricingRoutes)
+  .route("/reports", reportRoutes);
 
 export const api = new Hono().route("/v1", v1);

@@ -20,4 +20,8 @@ export const pricingRoutes = new Hono()
     const org = c.req.query("org");
     return c.json(await svc.createPriceRule(body, org ?? undefined), 201);
   })
-  .get("/rules/:id", async (c) => c.json(await svc.getPriceRule(c.req.param("id"))));
+  .get("/rules/:id", async (c) => c.json(await svc.getPriceRule(c.req.param("id"))))
+  // Rate + income ceiling per scheduling teacher (UC-016). Consumed by scheduling-back.
+  .get("/teacher-rates", async (c) =>
+    c.json({ items: await svc.getTeacherRates(c.req.query("org") ?? undefined) }),
+  );

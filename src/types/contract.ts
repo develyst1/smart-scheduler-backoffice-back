@@ -7,6 +7,8 @@ export type LedgerDirection = "CREDIT" | "DEBIT";
 export type RequestKind = "TOP_UP" | "PURCHASE" | "ADJUSTMENT";
 export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type PriceRuleKind = "HOURLY" | "FIXED" | "PERCENTAGE" | "CAP";
+export type ItemGroup = "PRODUCT" | "SERVICE";
+export type ItemType = "INCOME" | "EXPENSE" | "FIXED_COST";
 
 export interface OrganizationRef {
   id: string;
@@ -28,9 +30,13 @@ export interface CatalogItemDTO {
   sku: string;
   name: string;
   unit: string;
+  itemGroup: ItemGroup;
+  itemType: ItemType;
   salePriceMinor: number;
   trackStock: boolean;
   reorderLevel: number | null;
+  externalRef: string | null;
+  externalSource: string | null;
   quantityOnHand: number;
   active: boolean;
 }
@@ -41,6 +47,7 @@ export interface StockMovementDTO {
   direction: StockDirection;
   quantity: number;
   quantityAfter: number;
+  amountMinor: number;
   reason: string | null;
   refType: string | null;
   refId: string | null;
@@ -55,14 +62,24 @@ export interface CreateCatalogItemRequest {
   sku: string;
   name: string;
   unit?: string;
+  itemGroup?: ItemGroup;
+  itemType?: ItemType;
   salePriceMinor?: number;
   trackStock?: boolean;
   reorderLevel?: number | null;
+  externalRef?: string;
+  externalSource?: string;
+}
+
+export interface MovementByRefRequest extends StockMovementRequest {
+  externalSource: string;
+  externalRef: string;
 }
 
 export interface StockMovementRequest {
   direction: StockDirection;
   quantity: number;
+  amountMinor?: number;
   reason?: string;
   refType?: string;
   refId?: string;
@@ -189,6 +206,32 @@ export interface ListPriceRulesQuery {
   orgCode?: string;
   partyId?: string;
   orgDefault?: boolean;
+}
+
+// ── Profit & Loss (item-centric) ──
+export interface PLByItem {
+  itemId: string;
+  sku: string;
+  name: string;
+  itemGroup: ItemGroup;
+  itemType: ItemType;
+  amountMinor: number;
+}
+
+export interface PLReport {
+  from: string;
+  to: string;
+  revenueMinor: number; // Σ INCOME item movements
+  costMinor: number; // Σ EXPENSE + FIXED_COST item movements
+  profitMinor: number; // revenue − cost
+  byType: { itemType: ItemType; amountMinor: number }[];
+  byItem: PLByItem[];
+}
+
+export interface PLReportQuery {
+  orgCode?: string;
+  from?: string; // YYYY-MM-DD inclusive
+  to?: string; // YYYY-MM-DD inclusive
 }
 
 export type ApiErrorCode =

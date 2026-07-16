@@ -4,22 +4,42 @@ export const orgCodeQuery = z.object({
   org: z.string().trim().min(1).optional(),
 });
 
+export const listCatalogQuery = z.object({
+  org: z.string().trim().min(1).optional(),
+  externalSource: z.string().trim().min(1).optional(),
+  externalRef: z.string().trim().min(1).optional(),
+  itemType: z.enum(["INCOME", "EXPENSE", "FIXED_COST"]).optional(),
+});
+
 export const createCatalogItem = z.object({
   sku: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(256),
   unit: z.string().trim().min(1).max(32).optional(),
+  itemGroup: z.enum(["PRODUCT", "SERVICE"]).optional(),
+  itemType: z.enum(["INCOME", "EXPENSE", "FIXED_COST"]).optional(),
   salePriceMinor: z.number().int().min(0).optional(),
   trackStock: z.boolean().optional(),
   reorderLevel: z.number().int().min(0).nullable().optional(),
+  externalRef: z.string().trim().max(128).optional(),
+  externalSource: z.string().trim().max(64).optional(),
 });
 
 export const stockMovement = z.object({
   direction: z.enum(["IN", "OUT", "ADJUST"]),
   quantity: z.number().int().positive(),
+  // Optional explicit P&L value; when omitted the service computes quantity × unit amount.
+  amountMinor: z.number().int().min(0).optional(),
   reason: z.string().trim().max(500).optional(),
   refType: z.string().trim().max(64).optional(),
   refId: z.string().trim().max(128).optional(),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+// Decrement/adjust an item identified by its external ref (consumer doesn't know the uuid).
+export const movementByRef = stockMovement.extend({
+  org: z.string().trim().min(1).optional(),
+  externalSource: z.string().trim().min(1).max(64),
+  externalRef: z.string().trim().min(1).max(128),
 });
 
 export const createSale = z.object({
@@ -38,6 +58,18 @@ export const createSale = z.object({
 
 export const listMovementsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const plReportQuery = z.object({
+  org: z.string().trim().min(1).optional(),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 export const listPartiesQuery = z.object({

@@ -4,16 +4,9 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db, queryClient } from "./index";
-import { accounts, catalogItems, organizations, parties, priceRules, stockBalances } from "./schema";
+import { accounts, catalogItems, organizations, parties, stockBalances } from "./schema";
 
 const THB = (baht: number) => baht * 100;
-
-type TeacherRow = {
-  id: string;
-  name: string;
-  nickname: string;
-  type: "FULL_TIME" | "PART_TIME" | "FREELANCE";
-};
 
 console.log("Seeding ops schema…");
 
@@ -91,100 +84,10 @@ for (const s of catalogSeed) {
   }
 }
 
-// Sync teacher parties + freelance price rules from scheduling DB
-const teacherRows = await db.execute<TeacherRow>(sql`
-  SELECT id, name, nickname, type::text AS type
-  FROM public.teachers
-  ORDER BY nickname
-`);
-
-if (teacherRows.length === 0) {
-  console.warn("No teachers in public.teachers — run smart-scheduler-back db:seed first");
-} else {
-  // Reset teacher-linked ops data (dev seed — safe when no production ledger)
-  await db.execute(sql`
-    DELETE FROM ops.price_rules
-    WHERE party_id IN (SELECT id FROM ops.parties WHERE external_source = 'smart-scheduler')
-  `);
-  await db.execute(sql`
-    DELETE FROM ops.accounts
-    WHERE party_id IN (SELECT id FROM ops.parties WHERE external_source = 'smart-scheduler')
-  `);
-  await db.execute(sql`DELETE FROM ops.parties WHERE external_source = 'smart-scheduler'`);
-
-  const DEFAULT_FREELANCE_CAP = THB(20_000);
-
-  for (const t of teacherRows) {
-    const [teacherParty] = await db
-      .insert(parties)
-      .values({
-        organizationId: orgId,
-        displayName: t.name,
-        kind: "PERSON",
-        externalSource: "smart-scheduler",
-        externalRef: t.id,
-        metadata: { nickname: t.nickname, teacherType: t.type },
-      })
-      .returning();
-
-    if (t.type !== "FREELANCE") continue;
-
-    const rules: Array<{
-      kind: "HOURLY" | "FIXED" | "CAP";
-      label: string;
-      amountMinor: number;
-      metadata?: Record<string, unknown>;
-    }> = [
-      {
-        kind: "HOURLY",
-        label: "Private 1:1",
-        amountMinor: THB(500),
-        metadata: { teachingMode: "PRIVATE" },
-      },
-      {
-        kind: "FIXED",
-        label: "Group/Camp ครึ่งวัน",
-        amountMinor: THB(625),
-        metadata: { teachingMode: "GROUP_CAMP_HALF" },
-      },
-      {
-        kind: "FIXED",
-        label: "Group/Camp เต็มวัน",
-        amountMinor: THB(1250),
-        metadata: { teachingMode: "GROUP_CAMP_FULL" },
-      },
-      {
-        kind: "CAP",
-        label: "เพดานรายได้รายเดือน",
-        amountMinor: DEFAULT_FREELANCE_CAP,
-        metadata: { purpose: "INCOME_CAP" },
-      },
-    ];
-
-    // Exception: ครูโต๊ด (Part-Time) — Private วันธรรมดา 400 บาท/ชม.
-    if (t.nickname === "โต๊ด") {
-      rules.unshift({
-        kind: "HOURLY",
-        label: "Private วันธรรมดา (exception)",
-        amountMinor: THB(400),
-        metadata: { teachingMode: "PRIVATE", weekdaysOnly: true },
-      });
-    }
-
-    await db.insert(priceRules).values(
-      rules.map((r) => ({
-        organizationId: orgId,
-        partyId: teacherParty.id,
-        kind: r.kind,
-        label: r.label,
-        amountMinor: r.amountMinor,
-        metadata: r.metadata,
-      })),
-    );
-  }
-
-  console.log(`Synced ${teacherRows.length} teacher parties + freelance price rules`);
-}
+// NOTE: teachers are NO LONGER read from public.teachers here. Backoffice now runs on
+// its own standalone database (smart_backoffice_db) with no access to the scheduling
+// schema. Teachers/customers enter as EXPENSE/INCOME items or parties via the API
+// (frontoffice push) — see Phase 2. This seed only sets up generic demo data.
 
 console.log("Done. org=default, catalog=", catalogSeed.length);
 

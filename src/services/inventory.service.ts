@@ -25,10 +25,19 @@ export async function resolveOrganization(orgCode = DEFAULT_ORG_CODE) {
   return row;
 }
 
-export async function listCatalogItems(orgCode?: string) {
-  const org = await resolveOrganization(orgCode);
+export async function listCatalogItems(filter: {
+  orgCode?: string;
+  externalSource?: string;
+  externalRef?: string;
+  itemType?: "INCOME" | "EXPENSE" | "FIXED_COST";
+} = {}) {
+  const org = await resolveOrganization(filter.orgCode);
+  const conds = [eq(catalogItems.organizationId, org.id), eq(catalogItems.active, true)];
+  if (filter.externalSource) conds.push(eq(catalogItems.externalSource, filter.externalSource));
+  if (filter.externalRef) conds.push(eq(catalogItems.externalRef, filter.externalRef));
+  if (filter.itemType) conds.push(eq(catalogItems.itemType, filter.itemType));
   const rows = await db.query.catalogItems.findMany({
-    where: and(eq(catalogItems.organizationId, org.id), eq(catalogItems.active, true)),
+    where: and(...conds),
     with: { balance: true },
     orderBy: (t, { asc }) => asc(t.name),
   });
@@ -45,14 +54,38 @@ export async function createCatalogItem(input: CreateCatalogItemRequest, orgCode
         sku: input.sku,
         name: input.name,
         unit: input.unit ?? "each",
+        itemGroup: input.itemGroup ?? "PRODUCT",
+        itemType: input.itemType ?? "INCOME",
         salePriceMinor: input.salePriceMinor ?? 0,
         trackStock: input.trackStock ?? true,
         reorderLevel: input.reorderLevel ?? null,
+        externalRef: input.externalRef ?? null,
+        externalSource: input.externalSource ?? null,
       })
       .returning();
     await tx.insert(stockBalances).values({ itemId: item.id, quantityOnHand: 0 });
     return toCatalogItemDTO(item, { itemId: item.id, quantityOnHand: 0, updatedAt: new Date() });
   });
+}
+
+/** Apply a movement to the item linked to (externalSource, externalRef) — for consumers
+ *  (e.g. scheduling) that reference items by upstream id, not uuid. */
+export async function applyStockMovementByExternal(
+  externalSource: string,
+  externalRef: string,
+  input: StockMovementRequest,
+  orgCode?: string,
+) {
+  const org = await resolveOrganization(orgCode);
+  const item = await db.query.catalogItems.findFirst({
+    where: and(
+      eq(catalogItems.organizationId, org.id),
+      eq(catalogItems.externalSource, externalSource),
+      eq(catalogItems.externalRef, externalRef),
+    ),
+  });
+  if (!item) throw notFound(`ไม่พบ item ที่ผูกกับ ${externalSource}:${externalRef}`);
+  return applyStockMovement(item.id, input);
 }
 
 export async function getCatalogItem(id: string) {
@@ -82,39 +115,49 @@ export async function applyStockMovement(itemId: string, input: StockMovementReq
       where: eq(catalogItems.id, itemId),
     });
     if (!item) throw notFound("ไม่พบสินค้า");
-    if (!item.trackStock && input.direction !== "IN") {
-      throw badRequest("สินค้านี้ไม่ track stock");
-    }
+    // P&L value of this movement: explicit if given, else quantity × the item's unit amount.
+    const amountMinor = input.amountMinor ?? input.quantity * item.salePriceMinor;
 
-    let balance = await tx.query.stockBalances.findFirst({
-      where: eq(stockBalances.itemId, itemId),
-    });
-    if (!balance) {
-      const [created] = await tx
-        .insert(stockBalances)
-        .values({ itemId, quantityOnHand: 0 })
-        .returning();
-      balance = created;
-    }
-
-    let delta = input.quantity;
-    if (input.direction === "OUT") delta = -input.quantity;
-    if (input.direction === "ADJUST") {
-      // ADJUST sets absolute target when reason starts with '=' e.g. '=50'
-      if (input.reason?.startsWith("=")) {
-        const target = Number(input.reason.slice(1));
-        if (!Number.isInteger(target) || target < 0) throw badRequest("ADJUST target ไม่ถูกต้อง");
-        delta = target - balance.quantityOnHand;
+    let nextQty = 0;
+    if (item.trackStock) {
+      // Stock-tracked item (products, teacher quota): mutate the balance with a guard.
+      let balance = await tx.query.stockBalances.findFirst({
+        where: eq(stockBalances.itemId, itemId),
+      });
+      if (!balance) {
+        const [created] = await tx
+          .insert(stockBalances)
+          .values({ itemId, quantityOnHand: 0 })
+          .returning();
+        balance = created;
       }
+
+      let delta = input.quantity;
+      if (input.direction === "OUT") delta = -input.quantity;
+      if (input.direction === "ADJUST") {
+        // ADJUST sets absolute target when reason starts with '=' e.g. '=50'
+        if (input.reason?.startsWith("=")) {
+          const target = Number(input.reason.slice(1));
+          if (!Number.isInteger(target) || target < 0) throw badRequest("ADJUST target ไม่ถูกต้อง");
+          delta = target - balance.quantityOnHand;
+        }
+      }
+
+      nextQty = balance.quantityOnHand + delta;
+      if (nextQty < 0) throw conflict("INSUFFICIENT_STOCK", "สต๊อกไม่พอ");
+
+      await tx
+        .update(stockBalances)
+        .set({ quantityOnHand: nextQty })
+        .where(eq(stockBalances.itemId, itemId));
+    } else {
+      // Non-stock item (e.g. an unlimited INCOME service or a FIXED_COST): record the
+      // movement for the P&L only — there is no balance to draw down.
+      const balance = await tx.query.stockBalances.findFirst({
+        where: eq(stockBalances.itemId, itemId),
+      });
+      nextQty = balance?.quantityOnHand ?? 0;
     }
-
-    const nextQty = balance.quantityOnHand + delta;
-    if (nextQty < 0) throw conflict("INSUFFICIENT_STOCK", "สต๊อกไม่พอ");
-
-    await tx
-      .update(stockBalances)
-      .set({ quantityOnHand: nextQty })
-      .where(eq(stockBalances.itemId, itemId));
 
     const [movement] = await tx
       .insert(stockMovements)
@@ -123,6 +166,7 @@ export async function applyStockMovement(itemId: string, input: StockMovementReq
         direction: input.direction,
         quantity: input.quantity,
         quantityAfter: nextQty,
+        amountMinor,
         reason: input.reason ?? null,
         refType: input.refType ?? null,
         refId: input.refId ?? null,

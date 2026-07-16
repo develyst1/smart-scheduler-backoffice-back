@@ -30,6 +30,9 @@ export const ops = pgSchema("ops");
 
 export const partyKind = ops.enum("party_kind", ["PERSON", "ORGANIZATION"]);
 export const stockDirection = ops.enum("stock_direction", ["IN", "OUT", "ADJUST"]);
+// Item-centric P&L model: what the item is (group) + how it hits the books (type).
+export const itemGroup = ops.enum("item_group", ["PRODUCT", "SERVICE"]);
+export const itemType = ops.enum("item_type", ["INCOME", "EXPENSE", "FIXED_COST"]);
 export const accountUnit = ops.enum("account_unit", ["HOURS", "CURRENCY", "POINTS"]);
 export const ledgerDirection = ops.enum("ledger_direction", ["CREDIT", "DEBIT"]);
 export const requestStatus = ops.enum("request_status", [
@@ -119,9 +122,19 @@ export const catalogItems = ops.table(
     sku: text("sku").notNull(),
     name: text("name").notNull(),
     unit: text("unit").notNull().default("each"),
+    // P&L classification. group = PRODUCT|SERVICE (what it is), type = how it books:
+    // INCOME (revenue on sale), EXPENSE (variable cost, e.g. freelance hour), FIXED_COST (monthly).
+    itemGroup: itemGroup("item_group").notNull().default("PRODUCT"),
+    itemType: itemType("item_type").notNull().default("INCOME"),
+    // Per-unit amount in minor units (satang): sale price for INCOME, unit cost for EXPENSE/FIXED_COST.
     salePriceMinor: integer("sale_price_minor").notNull().default(0),
     trackStock: boolean("track_stock").notNull().default(true),
     reorderLevel: integer("reorder_level"),
+    // Optional link to an upstream entity (e.g. a scheduling teacher or course code) so a
+    // consumer can decrement "the item for teacher X" without knowing its uuid. Same
+    // decoupling pattern as parties — no FK across systems.
+    externalRef: text("external_ref"),
+    externalSource: text("external_source"),
     active: boolean("active").notNull().default(true),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -133,6 +146,7 @@ export const catalogItems = ops.table(
   (t) => [
     uniqueIndex("catalog_items_org_sku_uq").on(t.organizationId, t.sku),
     index("catalog_items_org_idx").on(t.organizationId),
+    index("catalog_items_external_idx").on(t.externalSource, t.externalRef),
   ],
 );
 
@@ -157,6 +171,9 @@ export const stockMovements = ops.table(
     direction: stockDirection("direction").notNull(),
     quantity: integer("quantity").notNull(),
     quantityAfter: integer("quantity_after").notNull(),
+    // Baht value (minor units) this movement contributes to the P&L. Revenue for INCOME
+    // items, cost for EXPENSE/FIXED_COST. Defaults to quantity × item unit amount.
+    amountMinor: integer("amount_minor").notNull().default(0),
     reason: text("reason"),
     refType: text("ref_type"),
     refId: text("ref_id"),
