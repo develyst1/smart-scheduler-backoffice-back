@@ -74,6 +74,17 @@ export interface CreateCatalogItemRequest {
   metadata?: Record<string, unknown>;
 }
 
+/** Partial edit of a catalog item (TASK-009). Identity/classification
+ *  (sku, item_group, item_type, external_*) are intentionally not editable here. */
+export interface UpdateCatalogItemRequest {
+  name?: string;
+  salePriceMinor?: number;
+  reorderLevel?: number | null;
+  active?: boolean;
+  /** Shallow-merged into existing metadata (e.g. edit monthlyBudgetMinor, keep kind). */
+  metadata?: Record<string, unknown>;
+}
+
 export interface MovementByRefRequest extends StockMovementRequest {
   externalSource: string;
   externalRef: string;
@@ -238,6 +249,43 @@ export interface PLReportQuery {
   orgCode?: string;
   from?: string; // YYYY-MM-DD inclusive
   to?: string; // YYYY-MM-DD inclusive
+}
+
+// ── Recurring FT/PT salary (SPEC-002) ──
+export interface RecurringCostDTO {
+  id: string;
+  externalRef: string | null; // teacherId (from the FIXED_COST item)
+  itemId: string;
+  label: string | null;
+  amountMinor: number;
+  effectiveFrom: string; // "YYYY-MM-DD" (first of month)
+  effectiveTo: string | null; // null = open-ended
+  active: boolean;
+  teacherType: string | null;
+}
+
+export interface SetRecurringCostRequest {
+  externalRef: string; // teacherId
+  label?: string;
+  amountMinor: number;
+  effectiveFrom: string; // "YYYY-MM"
+  teacherType?: "FULL_TIME" | "PART_TIME";
+}
+
+export interface MaterializeResult {
+  month: string; // "YYYY-MM"
+  posted: {
+    externalRef: string | null;
+    itemId: string;
+    amountMinor: number;
+    movementId: string;
+  }[];
+}
+
+export interface MonthStartResult {
+  month: string;
+  freelanceReset: number; // budgets reset
+  salariesPosted: number; // FIXED_COST salaries materialized
 }
 
 export type ApiErrorCode =

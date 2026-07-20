@@ -25,6 +25,16 @@ export const createCatalogItem = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+// Partial update of a catalog item (TASK-009) — all fields optional; identity/classification
+// (sku, item_group, item_type, external_*) are not mutable here.
+export const updateCatalogItem = z.object({
+  name: z.string().trim().min(1).max(256).optional(),
+  salePriceMinor: z.number().int().min(0).optional(),
+  reorderLevel: z.number().int().min(0).nullable().optional(),
+  active: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const stockMovement = z.object({
   direction: z.enum(["IN", "OUT", "ADJUST"]),
   quantity: z.number().int().positive(),
@@ -74,6 +84,26 @@ export const plReportQuery = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
 });
+
+// ── Recurring FT/PT salary (SPEC-002 / TASK-005) ──
+const MONTH = z.string().regex(/^\d{4}-\d{2}$/, "ต้องเป็นเดือนรูปแบบ YYYY-MM");
+
+export const listRecurringCostsQuery = z.object({
+  org: z.string().trim().min(1).optional(),
+  externalSource: z.string().trim().min(1).optional(),
+  externalRef: z.string().trim().min(1).optional(),
+});
+
+export const setRecurringCost = z.object({
+  externalRef: z.string().trim().min(1).max(128),
+  label: z.string().trim().max(256).optional(),
+  amountMinor: z.number().int().min(0),
+  effectiveFrom: MONTH,
+  teacherType: z.enum(["FULL_TIME", "PART_TIME"]).optional(),
+});
+
+export const materializeBody = z.object({ month: MONTH });
+export const monthStartBody = z.object({ month: MONTH });
 
 export const listPartiesQuery = z.object({
   org: z.string().trim().min(1).optional(),

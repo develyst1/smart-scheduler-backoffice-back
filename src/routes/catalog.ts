@@ -32,6 +32,9 @@ export const catalogRoutes = new Hono()
     );
   })
   .get("/:id", async (c) => c.json(await svc.getCatalogItem(c.req.param("id"))))
+  .patch("/:id", adminOrService, zValidator("json", v.updateCatalogItem), async (c) =>
+    c.json(await svc.updateCatalogItem(c.req.param("id"), c.req.valid("json"))),
+  )
   .post(
     "/:id/movements",
     adminOrService,

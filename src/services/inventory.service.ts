@@ -13,6 +13,7 @@ import type {
   CreateCatalogItemRequest,
   CreateSaleRequest,
   StockMovementRequest,
+  UpdateCatalogItemRequest,
 } from "../types/contract";
 
 const DEFAULT_ORG_CODE = "default";
@@ -87,6 +88,39 @@ export async function applyStockMovementByExternal(
   });
   if (!item) throw notFound(`ไม่พบ item ที่ผูกกับ ${externalSource}:${externalRef}`);
   return applyStockMovement(item.id, input);
+}
+
+/** Shallow-merge incoming metadata into existing (TASK-009) so editing one key (e.g.
+ *  monthlyBudgetMinor) preserves the rest (e.g. kind). `undefined` incoming = leave as-is. */
+export function mergeMetadata(
+  existing: Record<string, unknown> | null,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (incoming === undefined) return existing ?? null;
+  return { ...(existing ?? {}), ...incoming };
+}
+
+/** Partial update of a catalog item (TASK-009). Only name/salePriceMinor/reorderLevel/active/metadata
+ *  are editable; sku/group/type/external_* stay fixed. Editing metadata.monthlyBudgetMinor does NOT
+ *  change current stock — the new budget takes effect at the next monthly reset (TASK-005). */
+export async function updateCatalogItem(id: string, input: UpdateCatalogItemRequest) {
+  const existing = await db.query.catalogItems.findFirst({ where: eq(catalogItems.id, id) });
+  if (!existing) throw notFound("ไม่พบสินค้า");
+
+  const patch: Partial<typeof catalogItems.$inferInsert> = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.salePriceMinor !== undefined) patch.salePriceMinor = input.salePriceMinor;
+  if (input.reorderLevel !== undefined) patch.reorderLevel = input.reorderLevel;
+  if (input.active !== undefined) patch.active = input.active;
+  if (input.metadata !== undefined) patch.metadata = mergeMetadata(existing.metadata, input.metadata);
+
+  const item =
+    Object.keys(patch).length === 0
+      ? existing
+      : (await db.update(catalogItems).set(patch).where(eq(catalogItems.id, id)).returning())[0];
+
+  const balance = await db.query.stockBalances.findFirst({ where: eq(stockBalances.itemId, id) });
+  return toCatalogItemDTO(item, balance);
 }
 
 export async function getCatalogItem(id: string) {

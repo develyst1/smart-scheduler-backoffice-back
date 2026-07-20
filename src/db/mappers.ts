@@ -5,6 +5,7 @@ import type {
   commercialRequests,
   parties,
   priceRules,
+  recurringCosts,
   stockBalances,
   stockMovements,
 } from "../db/schema";
@@ -93,6 +94,23 @@ export function toCommercialRequestDTO(row: typeof commercialRequests.$inferSele
     reviewNote: row.reviewNote,
     reviewedAt: row.reviewedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toRecurringCostDTO(
+  rc: typeof recurringCosts.$inferSelect,
+  item?: typeof catalogItems.$inferSelect | null,
+) {
+  return {
+    id: rc.id,
+    externalRef: item?.externalRef ?? null,
+    itemId: rc.itemId,
+    label: rc.label,
+    amountMinor: rc.amountMinor,
+    effectiveFrom: rc.effectiveFrom,
+    effectiveTo: rc.effectiveTo,
+    active: rc.active,
+    teacherType: (rc.metadata?.teacherType as string | undefined) ?? null,
   };
 }
 

@@ -18,6 +18,7 @@ import {
   boolean,
   integer,
   timestamp,
+  date,
   jsonb,
   uniqueIndex,
   index,
@@ -295,6 +296,44 @@ export const priceRules = ops.table(
       .$onUpdate(() => new Date()),
   },
   (t) => [index("price_rules_party_idx").on(t.partyId)],
+);
+
+// ───────────────────────────── Recurring costs (effective-dated fixed salary) ─────────────────────────────
+// SPEC-002: per-teacher recurring monthly FIXED_COST salary schedule. A change closes the prior
+// open row (effective_to = month before the new effective_from) and inserts a new row, so past
+// months stay frozen and a materialize of any month reads the amount in effect *then*.
+
+export const recurringCosts = ops.table(
+  "recurring_costs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    // Optional link to the ops party for the teacher; the FIXED_COST item (external_ref=teacherId)
+    // is the real anchor, matching the party-less freelance model.
+    partyId: uuid("party_id").references(() => parties.id, { onDelete: "set null" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => catalogItems.id, { onDelete: "restrict" }),
+    label: text("label"),
+    amountMinor: integer("amount_minor").notNull(),
+    // First day of the effective month; effective_to = last active month (null = open-ended).
+    effectiveFrom: date("effective_from").notNull(),
+    effectiveTo: date("effective_to"),
+    active: boolean("active").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("recurring_costs_org_idx").on(t.organizationId),
+    index("recurring_costs_item_idx").on(t.itemId),
+    index("recurring_costs_effective_idx").on(t.effectiveFrom, t.effectiveTo),
+  ],
 );
 
 // ───────────────────────────── Settlement (payroll-like, generic) ─────────────────────────────
