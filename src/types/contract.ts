@@ -38,6 +38,7 @@ export interface CatalogItemDTO {
   externalRef: string | null;
   externalSource: string | null;
   quantityOnHand: number;
+  metadata: Record<string, unknown> | null;
   active: boolean;
 }
 
@@ -69,6 +70,8 @@ export interface CreateCatalogItemRequest {
   reorderLevel?: number | null;
   externalRef?: string;
   externalSource?: string;
+  /** Freelance-budget items (SPEC-001) carry { kind:'FREELANCE_BUDGET', monthlyBudgetMinor }. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface MovementByRefRequest extends StockMovementRequest {
@@ -84,6 +87,9 @@ export interface StockMovementRequest {
   refType?: string;
   refId?: string;
   idempotencyKey?: string;
+  /** When true, skip the INSUFFICIENT_STOCK guard so quantity_on_hand may go ≤ 0.
+   *  Used by the freelance capping-day overage and the admin allow-negative unlock. */
+  allowNegative?: boolean;
 }
 
 export interface SaleLineRequest {

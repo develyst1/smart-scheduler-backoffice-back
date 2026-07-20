@@ -22,6 +22,7 @@ export const createCatalogItem = z.object({
   reorderLevel: z.number().int().min(0).nullable().optional(),
   externalRef: z.string().trim().max(128).optional(),
   externalSource: z.string().trim().max(64).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const stockMovement = z.object({
@@ -33,6 +34,8 @@ export const stockMovement = z.object({
   refType: z.string().trim().max(64).optional(),
   refId: z.string().trim().max(128).optional(),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
+  // Skip the INSUFFICIENT_STOCK guard (freelance capping-day overage / allow-negative unlock).
+  allowNegative: z.boolean().optional(),
 });
 
 // Decrement/adjust an item identified by its external ref (consumer doesn't know the uuid).

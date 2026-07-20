@@ -16,6 +16,85 @@
 
 ---
 
+## 2026-07-20 — As-built reconcile: Backoffice pivot เป็น Item-centric P&L (wallet/payroll พักไว้)  ⭐
+> ที่มา: คุณฟีนสั่งให้ทีม AI ทำความเข้าใจโปรเจกต์ทั้งหมดก่อนสั่งงาน · Porter (PM) sweep โค้ดจริงทั้ง 4 repo (2026-07-20)
+> บันทึกนี้แก้ข้อมูลสถานะที่ล้าสมัยในเอกสารเก่าให้ตรงโค้ดจริง — **ยังไม่ตัดสินใจ scope** (รอ stakeholder)
+
+### สถานะจริงของ backoffice (แก้ของเดิมที่เขียนว่า greenfield 0%)
+- **backoffice-front ไม่ใช่ 0%** — มีหน้าใช้งานจริงที่ต่อ API แล้ว 2 หน้า: **Dashboard งบกำไร-ขาดทุน (P&L)**
+  และ **Items** (catalog CRUD + สต๊อกเข้า-ออก IN/OUT/ADJUST) · Next 16 + Mantine dark · port **3100**
+  · หน้า `inventory` / `wallet` / `payroll` / `reports` ยังเป็น placeholder stub เฉยๆ
+- **Backoffice pivot** จากโมเดลเดิม (wallet + payroll + inventory แยกส่วน) → เป็น **item-centric P&L**:
+  ทุกอย่างเป็น `catalog_items` ที่มี `item_type` = **INCOME / EXPENSE / FIXED_COST**, ทุก movement เข้า P&L
+  · `GET /reports/pl` = ตัวตอบ "เดือนนี้เงินเข้าเท่าไหร่" (revenue/cost/profit, by-type, by-item)
+- **Wallet (`ops.accounts`) + Payroll (`ops.settlement_runs`) ถูกพักไว้** — accounts มี schema+API แต่ยังไม่ wire
+  debit ตอน ATTENDED · settlement_runs/lines เป็น schema เปล่า ไม่มี service/route
+  · เหตุผล: ฝั่งจองตารางนับชม.คงเหลือ (course.usedSessions / voucher.usedHours) อยู่แล้ว → wallet หลังบ้านเป็นของซ้อน
+- ค่าครู (freelance รายชม. / fulltime fixed cost) ปัจจุบันโมเดลเป็น **expense item คีย์มือ** เข้า P&L
+  — **ไม่ใช่** payroll engine ที่คำนวณอัตโนมัติจากชม.สอนจริง
+
+### ✅ มติจากคุณฟีน (2026-07-20): ใช้ทาง A — item-centric P&L
+- **ยืนยันทิศทาง backoffice = item-centric P&L** · **ไม่ทำ** payroll engine เต็ม + student hour-wallet (พักไว้)
+- **ค่าครู Freelance = "งบรายเดือนแบบสต๊อก" ต่อคน** — ตั้งงบ+เรทรายคน, ตัดยอดที่ **end-of-day job** (สอนจริง = จอง−ลา),
+  ยอดที่ตัดเข้า P&L เป็น EXPENSE อัตโนมัติ · งบถึง 0 → frontoffice ซ่อนครูจากหน้าจอง + teacher-mgmt ขึ้นธง ·
+  แอดมินปลดล็อกได้ (เติมงบ หรือยอมติดลบ) · Full/Part-time = `FIXED_COST` คีย์มือรายเดือน
+  → เป็น build จริงของ UC-016 (income ceiling / auto-disable)
+- ออกเป็น **REQ-001** (`ai-worker/requirements/REQ-001-freelance-budget-stock.md`, READY_FOR_SA → Sober)
+- เอกสารกลางของทีม (as-built map + รายละเอียด): `ai-agent-workspace/smart-scheduler/ai-worker/project-understanding.md`
+
+---
+
+## 2026-07-16 — Reconcile requirement.html กับโค้ดจริง (as-built) + ดีไซน์ Auto-cut / Income-ceiling / LINE  ⭐
+> ที่มา: คุณฟีนสั่ง "อัปเดต requirement ให้เป็นภาพปัจจุบัน แล้วเคลียร์ทีละเรื่อง" · verify โค้ดทั้ง 4 repo ด้วย sub-agent
+
+### แก้ status ใน requirement.html ให้ตรงโค้ด
+- **UC-029** แจ้งลาล่วงหน้าตามประเภทครู → **Implemented** (`lib/leave-notice.ts` FT/PT 60min, FL 120min, wired staff+LINE bot + test) — เดิม badge เขียน Planned ผิด
+- **SCR-008** QR check-in → **Implemented** (token + Bangkok time-window `[start−30min, end]`, **ไม่มี GPS**)
+- **API-018/019/020/021/022** (backoffice BE: catalog/sales/parties/accounts/commercial) → **Implemented**
+- **API-023** pricing → Partial (มีแค่ GET/POST/GET:id **ไม่มี update/delete**; seed เรทเฉพาะ FREELANCE, FT/PT ยังไม่มี)
+- **UC-031** ขยายคอร์สด้วยมือ → Partial (move คาบได้ แต่ extend/recompute remaining ยังไม่มี)
+- **UC-033** ชื่อวิชา → Partial (seed โปรแกรมกีฬาจริงแล้ว แต่ **Bike/Scooter ยังรวม subject เดียว** — confirm ลูกค้าว่าจะแยกไหม)
+
+### เพิ่ม/ปรับ card
+- เพิ่ม **ระบบ Badge** ที่ build เสร็จ end-to-end แต่ hub ไม่เคยมี → **WF-012 / UC-036 / SCR-011 / API-024 / TC-016** (Implemented)
+- **UC-034 Multi-branch → Descoped** (ลูกค้ายืนยัน 2026-07-15 ไม่เอาแยกสาขา แทนด้วย Badge) · WF-011 เหลือแค่ Google Calendar sync
+- counts ใหม่: 12 WF · 36 UC · 11 SCR · 24 API · 15 TC · 8 DIA
+
+### ดีไซน์ที่ตกลง (ยังไม่ build — ทำต่อรอบหน้า)
+- **Auto-cut สิ้นวัน (UC-012):** `bun build --compile` exe เป็น trigger ยิง `POST /internal/jobs/end-of-day` ใน back (logic ตัด+รายงานอยู่ที่เดียว), **idempotent + `job_runs` log**, timezone Asia/Bangkok, Windows Task Scheduler ~18:05 · แยก 2 งาน (ตัดจริง/รายงาน) · **ทำได้เลย ไม่ต้องรอ backoffice**
+- **Income ceiling (UC-016):** cross-system — mock ล้วน (back `teachers` ไม่มี column rate/limit → `overLimit` false เสมอ) · **รอ backoffice-*back*** (pricing เรทจริง + endpoint ดึงเรท/cap + D.1 wire) **ไม่รอ front** · foundation เดียวกับ wallet debit (UC-025) + payroll (UC-024) → ทำ backoffice-back finance ก่อน
+- **LINE:** bot inbound ตอบได้จริง แต่ **reply ไทยล้วน (UC-032 Partial)** + **push แจ้งผู้ปกครองตอนสมัครคอร์สยังไม่ทำ (UC-028 Planned)** + UX ดิบ → **รอลูกค้าบรีฟก่อน**
+
+### ✅ Build ที่ทำจริงรอบนี้ (verify จริงบน DB)
+- **Auto-cut สิ้นวัน (UC-012):** migration `0009` (`NO_SHOW` + `job_runs`), `jobs.service.ts`, endpoint `POST /internal/jobs/end-of-day` (secret), exe `scripts/end-of-day.ts` · integration: CONFIRMED คาบผ่าน→NO_SHOW+ตัดโควตา, idempotent
+- **Income ceiling เรท/เพดานจริง (UC-016):** backoffice `GET /pricing/teacher-rates` (API-026) → scheduling `lib/ops-client.ts` เติม TeacherDTO → front map จริง · verify cross-system: freelance ได้ 500/20000 จริง (เดิม mock) · **เหลือ:** ย้ายแถบสีมาปฏิทิน
+- 🔴 **infra:** scheduling+backoffice ใช้ `drizzle.__drizzle_migrations` ร่วมกัน → backoffice migrate ถูกข้าม; รอบนี้ apply ops SQL ตรงๆ + seed แล้ว, ต้องแยก migrations table ถาวร
+
+📄 รายละเอียดเต็ม + as-built ทุก ID พร้อม path/line: `smart-scheduler-requirement/HANDOFF-2026-07-16.md`
+
+---
+
+## 2026-07-15 — Badge system (แทน Multi-branch) + กฎแจ้งลาล่วงหน้า (UC-029)
+> ที่มา: ประชุม 2026-07-11 + คุยลูกค้าเพิ่ม (คุณฟีน)
+
+### Badge system ⭐ (แทนแนวคิดแยกสาขา)
+ลูกค้า **ไม่เอาแยกสาขา** — ต่อให้มีหลายสาขาก็อยากดูบน **web + visual calendar เดียวกัน**
+แทนด้วยระบบ **badge ยืดหยุ่น** ที่แอดมินออกแบบเอง → "สาขา" กลายเป็นแค่ badge type หนึ่ง
+- โครงสร้าง 2 ชั้น: **badge type → values** (แต่ละค่ามีสีจาก palette 12 สี), การจอง 1 ครั้งติดได้หลาย type แต่ **type ละ 1 ค่า**
+- ติด badge ตอนจอง · กรองปฏิทินตาม badge (OR) · dashboard: per-badge count + ครู×badge
+- ลบค่าที่ใช้แล้ว = soft-delete · รายละเอียด → [badge-system-design.md](badge-system-design.md)
+- **ค้าง:** แก้ badge ของ booking เดิมผ่าน view modal (API `PATCH /bookings/:id/badges` พร้อมแล้ว)
+
+### UC-029 กฎแจ้งลาล่วงหน้าตามประเภทครู
+- FULL_TIME/PART_TIME ≥ 1 ชม., FREELANCE ≥ 2 ชม. ก่อนเริ่มคลาส
+- บังคับทุกคน + **admin override ได้** (`override:true`) · ลาไม่ทัน → ปฏิเสธ คาบคงเดิม (409 `LEAVE_NOTICE_TOO_LATE`)
+
+### หมายเหตุจากรอบนี้
+- feedback ข้อ 1 (English UI) + ข้อ 5 (overbook เฉพาะคนลา) **ทำไปแล้วก่อนหน้า** — รอบนี้แค่ cleanup
+- check-in จริงเป็น **QR token + time-window ไม่มี GPS** (ต่างจากที่ประชุมเล่า) — ข้อ 4 รอ confirm ลูกค้า
+
+---
+
 ## 2026-06-30 (11:25) — เรทค่าสอน Freelance + Group/Camp/ECA  ⭐ ยึดอันนี้ (payroll detail)
 > ที่มา: ข้อความลูกค้า (`chat-requirement-detail.md` 11:25)
 

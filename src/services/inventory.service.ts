@@ -61,6 +61,7 @@ export async function createCatalogItem(input: CreateCatalogItemRequest, orgCode
         reorderLevel: input.reorderLevel ?? null,
         externalRef: input.externalRef ?? null,
         externalSource: input.externalSource ?? null,
+        metadata: input.metadata ?? null,
       })
       .returning();
     await tx.insert(stockBalances).values({ itemId: item.id, quantityOnHand: 0 });
@@ -104,6 +105,15 @@ async function findMovementByIdempotency(key: string | undefined) {
   });
 }
 
+// Movement conventions for freelance budget-stock items (SPEC-001 / TASK-002).
+// The scheduling caller sends, per event:
+//   booking committed  → OUT, amountMinor=job satang, refType='BOOKING'
+//   cancel/customer-leave → IN,  amountMinor=job satang, refType='BOOKING_REVERSAL'
+//   admin top-up (unlock) → IN,  amountMinor=0,          refType='TOPUP'
+//   monthly reset       → ADJUST reason='=<budget>', amountMinor=0, refType='RESET'
+// The P&L (reports.service) nets EXPENSE = ΣOUT − Σ(reversal IN); amountMinor=0 movements
+// (top-up/reset) are P&L-neutral. `allowNegative` lets the capping-day overage / admin
+// unlock drive quantity_on_hand ≤ 0.
 export async function applyStockMovement(itemId: string, input: StockMovementRequest) {
   assertPositiveInt(input.quantity, "quantity");
 
@@ -144,7 +154,7 @@ export async function applyStockMovement(itemId: string, input: StockMovementReq
       }
 
       nextQty = balance.quantityOnHand + delta;
-      if (nextQty < 0) throw conflict("INSUFFICIENT_STOCK", "สต๊อกไม่พอ");
+      if (nextQty < 0 && !input.allowNegative) throw conflict("INSUFFICIENT_STOCK", "สต๊อกไม่พอ");
 
       await tx
         .update(stockBalances)

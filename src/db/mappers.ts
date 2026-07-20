@@ -26,6 +26,7 @@ export function toCatalogItemDTO(
     externalRef: item.externalRef,
     externalSource: item.externalSource,
     quantityOnHand: balance?.quantityOnHand ?? 0,
+    metadata: item.metadata ?? null,
     active: item.active,
   };
 }

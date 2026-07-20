@@ -14,7 +14,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 ├── smart-scheduler-back/           ← Scheduling API (Hono :3001)
 ├── smart-scheduler-front/          ← Staff UI (Next.js :3000)
 ├── smart-scheduler-backoffice-back/← Operations API (Hono :3002)
-└── smart-scheduler-backoffice-front/ ← Admin UI (greenfield)
+└── smart-scheduler-backoffice-front/ ← Admin UI (Next.js :3100 — P&L + Items built)
 ```
 
 **Database:** PostgreSQL เดียว — `public.*` (scheduling) + `ops.*` (finance)
@@ -32,7 +32,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | **บทบาท** | Source of truth: ครู, นักเรียน, จอง, ลา, LINE push |
 | **ความสำเร็จ** | ~75% — 17 API endpoints, conflict resolution, recurring course, voucher, JWT |
 | **เหลือ** | C.1–C.5 (QR/LINE/CRM/cron), D.1 (wire backoffice) |
-| **เริ่มอ่าน** | `CLAUDE.md`, `src/services/scheduler.service.ts` (งาน/สโคป: requirement repo) |
+| **เริ่มอ่าน** | `CLAUDE.md`, `todo.md`, `src/services/scheduler.service.ts` |
 
 ### smart-scheduler-front (Staff Web)
 
@@ -43,7 +43,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | **บทบาท** | ปฏิทิน staff แทน Excel — จอง, เช็คอินมือ, รายงาน |
 | **ความสำเร็จ** | ~70% — เชื่อม API จริง + auth |
 | **เหลือ** | ฟอร์มสมัครคอร์ส/voucher (BE พร้อม), รอ C.* จาก BE |
-| **เริ่มอ่าน** | `CLAUDE.md`, `src/components/partials/Calendar/` (งาน/สโคป: requirement repo) |
+| **เริ่มอ่าน** | `CLAUDE.md`, `todo.md`, `src/components/partials/Calendar/` |
 
 ### smart-scheduler-backoffice-back (Operations API)
 
@@ -60,10 +60,10 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 
 | | |
 |--|--|
-| **Stack** | (planned) Next 16 + Mantine dark theme |
-| **บทบาท** | สต๊อก, wallet, payroll, รายงาน — แทน Alis To Soft |
-| **ความสำเร็จ** | 0% — `src/` ว่าง, มีแค่ docs |
-| **เริ่ม** | Wave 0 scaffold — สโคปดูที่ repo `smart-scheduler-requirement` (requirement.html) |
+| **Stack** | Next 16 + React 19 + Mantine v9 (dark) + TanStack Query · port **3100** |
+| **บทบาท** | Admin ERP/การเงิน — แทน Alis To Soft (pivot เป็น **item-centric P&L**) |
+| **ความสำเร็จ** | ⚠️ **ไม่ใช่ 0%** — Dashboard P&L + Items (catalog + สต๊อก IN/OUT/ADJUST) ต่อ API จริงแล้ว · หน้า inventory/wallet/payroll/reports ยัง stub |
+| **เริ่มอ่าน** | `src/components/partials/{Dashboard,Items}/` · ทิศทาง payroll/wallet = รอ stakeholder (ดู requirement-timeline 2026-07-20) |
 
 ---
 
@@ -116,8 +116,8 @@ flowchart LR
 | QR check-in | ❌ | ❌ | — | — |
 | CRM points | ❌ | ❌ | 🟡 schema | ❌ |
 | Cron ตัดโควตาสิ้นวัน | ❌ | — | — | — |
-| สมัครคอร์ส API | ✅ | ❌ form | — | — |
-| Voucher API | ✅ | ❌ form | — | — |
+| สมัครคอร์ส API | ✅ | ✅ form | — | — |
+| Voucher API | ✅ | ✅ form | — | — |
 | Inventory/POS | — | — | ✅ | ❌ |
 | Wallet ชั่วโมง | — | — | ✅ | ❌ |
 | Payroll settlement | — | — | ❌ | ❌ |
@@ -126,10 +126,10 @@ flowchart LR
 
 ## 5. ลำดับงานแนะนำ (2026-06-30)
 
-1. **Master data** — แทน seed ด้วยโปรแกรม + ครู 23 คนจริง ([teacher-roster-payroll.md](teacher-roster-payroll.md))
-2. **C.4** LINE webhook (ปลดล็อก push จริง)
-3. **C.3** cron 18:00 ตัดโควตา
-4. **FE** ฟอร์มคอร์ส + voucher
+1. ~~**Master data**~~ — ✅ seed โปรแกรม + ครู (2026-06-30)
+2. ~~**FE** ฟอร์มคอร์ส + voucher~~ — ✅
+3. **C.4** LINE webhook (ปลดล็อก push จริง)
+4. **C.3** cron 18:00 ตัดโควตา
 5. **D.1** wire scheduling ↔ backoffice (debit + pricing)
 6. **backoffice-front** Wave 0 → inventory demo
 7. **Settlement** — payroll 3 ประเภทครูตาม [teacher-roster-payroll.md](teacher-roster-payroll.md)
@@ -165,4 +165,4 @@ cd smart-scheduler-backoffice-back && bunx drizzle-kit migrate && bun run db:see
 2. [product-catalog-pricing.md](product-catalog-pricing.md)
 3. [teacher-roster-payroll.md](teacher-roster-payroll.md)
 4. [requirement-timeline.md](requirement-timeline.md) — entry บนสุดชนะ
-5. `<repo>/CLAUDE.md` + `smart-scheduler-requirement/requirement.html`
+5. `<repo>/CLAUDE.md` + `<repo>/todo.md`
