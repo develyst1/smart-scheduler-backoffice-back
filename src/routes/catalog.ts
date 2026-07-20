@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import * as v from "../validation";
 import * as svc from "../services/inventory.service";
-import { adminAuth, serviceAuth } from "../middleware/auth";
+import { adminAuth, adminOrService } from "../middleware/auth";
 
 export const catalogRoutes = new Hono()
   .get("/", zValidator("query", v.listCatalogQuery), async (c) => {
@@ -24,7 +24,7 @@ export const catalogRoutes = new Hono()
   })
   // Decrement an item by its upstream ref (scheduling calls this). Static path — declared
   // before /:id/movements so "by-ref" isn't captured as an id.
-  .post("/by-ref/movements", serviceAuth, zValidator("json", v.movementByRef), async (c) => {
+  .post("/by-ref/movements", adminOrService, zValidator("json", v.movementByRef), async (c) => {
     const { org, externalSource, externalRef, ...movement } = c.req.valid("json");
     return c.json(
       await svc.applyStockMovementByExternal(externalSource, externalRef, movement, org),
@@ -34,7 +34,7 @@ export const catalogRoutes = new Hono()
   .get("/:id", async (c) => c.json(await svc.getCatalogItem(c.req.param("id"))))
   .post(
     "/:id/movements",
-    serviceAuth,
+    adminOrService,
     zValidator("json", v.stockMovement),
     async (c) => {
       const body = c.req.valid("json");
@@ -50,7 +50,7 @@ export const catalogRoutes = new Hono()
 
 export const commerceRoutes = new Hono().post(
   "/sales",
-  serviceAuth,
+  adminOrService,
   zValidator("json", v.createSale),
   async (c) => {
     const body = c.req.valid("json");

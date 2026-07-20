@@ -25,3 +25,25 @@ export async function adminAuth(c: Context, next: Next) {
   // TODO: verify JWT against JWT_SECRET
   await next();
 }
+
+/** Endpoints that BOTH a human admin (backoffice FE) and a machine (scheduling) may call —
+ *  e.g. stock movements & sales. Passes if the admin gate OR the service-token gate passes. */
+export async function adminOrService(c: Context, next: Next) {
+  if (process.env.SKIP_ADMIN_AUTH === "true") {
+    await next();
+    return;
+  }
+  const header = c.req.header("Authorization");
+  const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const expected = process.env.SERVICE_TOKEN;
+  const svcToken = c.req.header("X-Service-Token") ?? bearer;
+  if (expected && svcToken === expected) {
+    await next(); // machine consumer with a valid service token
+    return;
+  }
+  if (header?.startsWith("Bearer ")) {
+    await next(); // admin JWT (stub — real verify lands with backoffice login)
+    return;
+  }
+  throw unauthorized("ต้อง login admin หรือใช้ service token");
+}
