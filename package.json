@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --compile --minify --outfile dist/smart-scheduler-backoffice-back",
     "start": "bun src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
