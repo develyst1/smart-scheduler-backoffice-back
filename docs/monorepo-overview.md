@@ -11,13 +11,20 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 ├── docs/                           ← ⭐ ต้นฉบับเอกสารธุรกิจ + living spec
 ├── chat-requirement-detail.md      ← ข้อความดิบลูกค้า (payroll)
 ├── S__74989580.jpg                 ← rate card โปรแกรม/ราคา
-├── smart-scheduler-back/           ← Scheduling API (Hono :3001)
-├── smart-scheduler-front/          ← Staff UI (Next.js :3000)
-├── smart-scheduler-backoffice-back/← Operations API (Hono :3002)
-└── smart-scheduler-backoffice-front/ ← Admin UI (Next.js :3100 — P&L + Items built)
+├── smart-scheduler-back/           ← Scheduling API (Hono :4006)
+├── smart-scheduler-front/          ← Staff UI (Next.js :3016)
+├── smart-scheduler-backoffice-back/← Operations API (Hono :4010)
+└── smart-scheduler-backoffice-front/ ← Admin UI (Next.js :3018 — P&L + Items built)
 ```
 
 **Database:** PostgreSQL เดียว — `public.*` (scheduling) + `ops.*` (finance)
+
+> **Canonical port map (confirmed by Porter 2026-07-20 — this is the source of truth):**
+> staff-front **:3016** · scheduling-back **:4006** · ops-back **:4010** · ops-front **:3018**.
+> Cross-service `.env`: `smart-scheduler-back OPS_API_URL=http://localhost:4010`,
+> `smart-scheduler-backoffice-front NEXT_PUBLIC_BACKOFFICE_API_URL=http://localhost:4010/api`.
+> Scheduled-task targets: **end-of-day → :4006** (`INTERNAL_JOB_SECRET`),
+> **month-start → :4010** (`X-Service-Token`). Older `:3001/:3000/:3002/:3100` mentions are superseded.
 
 ---
 
@@ -28,7 +35,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | | |
 |--|--|
 | **Stack** | Bun, Hono, Drizzle, PostgreSQL (`public`) |
-| **Port** | 3001 |
+| **Port** | 4006 |
 | **บทบาท** | Source of truth: ครู, นักเรียน, จอง, ลา, LINE push |
 | **ความสำเร็จ** | ~75% — 17 API endpoints, conflict resolution, recurring course, voucher, JWT |
 | **เหลือ** | C.1–C.5 (QR/LINE/CRM/cron), D.1 (wire backoffice) |
@@ -39,7 +46,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | | |
 |--|--|
 | **Stack** | Next.js 16, React 19, Mantine v9, TanStack Query |
-| **Port** | 3000 |
+| **Port** | 3016 |
 | **บทบาท** | ปฏิทิน staff แทน Excel — จอง, เช็คอินมือ, รายงาน |
 | **ความสำเร็จ** | ~70% — เชื่อม API จริง + auth |
 | **เหลือ** | ฟอร์มสมัครคอร์ส/voucher (BE พร้อม), รอ C.* จาก BE |
@@ -50,7 +57,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 | | |
 |--|--|
 | **Stack** | Bun, Hono, Drizzle, PostgreSQL (`ops`) |
-| **Port** | 3002 |
+| **Port** | 4010 |
 | **บทบาท** | Mini ERP/POS, wallet ชั่วโมง, pricing, settlement (payroll) |
 | **ความสำเร็จ** | ~40% — catalog, parties, accounts, commercial, pricing CRUD |
 | **เหลือ** | Settlement, reports, wire scheduling debit, seed เรทจริง |
@@ -60,7 +67,7 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 
 | | |
 |--|--|
-| **Stack** | Next 16 + React 19 + Mantine v9 (dark) + TanStack Query · port **3100** |
+| **Stack** | Next 16 + React 19 + Mantine v9 (dark) + TanStack Query · port **3018** |
 | **บทบาท** | Admin ERP/การเงิน — แทน Alis To Soft (pivot เป็น **item-centric P&L**) |
 | **ความสำเร็จ** | ⚠️ **ไม่ใช่ 0%** — Dashboard P&L + Items (catalog + สต๊อก IN/OUT/ADJUST) ต่อ API จริงแล้ว · หน้า inventory/wallet/payroll/reports ยัง stub |
 | **เริ่มอ่าน** | `src/components/partials/{Dashboard,Items}/` · ทิศทาง payroll/wallet = รอ stakeholder (ดู requirement-timeline 2026-07-20) |
@@ -72,14 +79,14 @@ smart-scheduler/                    ← workspace root (เอกสารร่
 ```mermaid
 flowchart LR
   subgraph frontoffice
-    FE[front :3000]
-    SCH[back :3001]
+    FE[front :3016]
+    SCH[back :4006]
     FE --> SCH
   end
 
   subgraph backoffice
     BOFE[backoffice-front]
-    OPS[backoffice-back :3002]
+    OPS[backoffice-back :4010]
     BOFE -.-> OPS
   end
 
@@ -140,13 +147,13 @@ flowchart LR
 
 ```bash
 # Scheduling API
-cd smart-scheduler-back && bun install && bun run dev    # :3001
+cd smart-scheduler-back && bun install && bun run dev    # :4006
 
 # Staff UI
-cd smart-scheduler-front && bun install && bun run dev   # :3000
+cd smart-scheduler-front && bun install && bun run dev   # :3016
 
 # Operations API
-cd smart-scheduler-backoffice-back && bun install && bun run dev  # :3002
+cd smart-scheduler-backoffice-back && bun install && bun run dev  # :4010
 
 # DB migrate (scheduling)
 cd smart-scheduler-back && bunx drizzle-kit migrate && bun run db:seed

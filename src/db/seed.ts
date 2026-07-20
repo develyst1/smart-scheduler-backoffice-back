@@ -84,12 +84,40 @@ for (const s of catalogSeed) {
   }
 }
 
+// Day-end revenue INCOME items (TASK-007 posts here via recordSale on attended TRIAL/SINGLE).
+// track_stock=false → P&L posting only, no balance. external_ref = sku (matches
+// recordSale('first-trial'|'single-session', …)). Idempotent on (org, sku).
+// ⚠️ PLACEHOLDER prices (project-docs/seed-data-placeholder-2026-07-20.md §4): single-session is
+// really program-dependent (1,090–1,690) — flat 1,390 for now; คุณฟีน refines later.
+const incomeSeed = [
+  { sku: "first-trial", name: "First Trial (1h)", salePriceMinor: THB(1390) },
+  { sku: "single-session", name: "Single Session (1h)", salePriceMinor: THB(1390) },
+];
+
+for (const s of incomeSeed) {
+  await db
+    .insert(catalogItems)
+    .values({
+      organizationId: orgId,
+      sku: s.sku,
+      name: s.name,
+      itemGroup: "SERVICE",
+      itemType: "INCOME",
+      salePriceMinor: s.salePriceMinor,
+      trackStock: false,
+      externalSource: "smart-scheduler",
+      externalRef: s.sku,
+      metadata: { category: "REVENUE" },
+    })
+    .onConflictDoNothing();
+}
+
 // NOTE: teachers are NO LONGER read from public.teachers here. Backoffice now runs on
 // its own standalone database (smart_backoffice_db) with no access to the scheduling
 // schema. Teachers/customers enter as EXPENSE/INCOME items or parties via the API
 // (frontoffice push) — see Phase 2. This seed only sets up generic demo data.
 
-console.log("Done. org=default, catalog=", catalogSeed.length);
+console.log("Done. org=default, catalog=", catalogSeed.length, "income=", incomeSeed.length);
 
 await queryClient.end();
 process.exit(0);
