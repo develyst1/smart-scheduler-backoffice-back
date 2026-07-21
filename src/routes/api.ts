@@ -7,6 +7,7 @@ import { pricingRoutes } from "./pricing";
 import { reportRoutes } from "./reports";
 import { recurringCostRoutes, internalRoutes } from "./recurring";
 import { authRoutes } from "./auth";
+import { teacherSyncRoutes } from "./teacher-sync";
 
 /** Versioned public API — resource names are domain-neutral. */
 export const v1 = new Hono()
@@ -19,6 +20,7 @@ export const v1 = new Hono()
   .route("/pricing", pricingRoutes)
   .route("/reports", reportRoutes)
   .route("/recurring-costs", recurringCostRoutes)
-  .route("/internal", internalRoutes);
+  .route("/internal", internalRoutes)
+  .route("/internal/teacher-sync", teacherSyncRoutes);
 
 export const api = new Hono().route("/v1", v1);

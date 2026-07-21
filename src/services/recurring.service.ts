@@ -115,6 +115,39 @@ export async function setRecurringCost(input: SetRecurringCostRequest, orgCode?:
   });
 }
 
+/** Teacher-sync (TASK-015): stop a teacher's salary — set `effective_to` on their **open** recurring
+ *  row WITHOUT inserting a successor (the missing "terminate" path; `setRecurringCost` only supersedes).
+ *  No-op if the teacher has no FIXED_COST item or no open row. Returns whether a row was closed. */
+export async function terminateRecurring(
+  externalRef: string,
+  effectiveTo: string,
+  orgCode?: string,
+): Promise<boolean> {
+  const org = await resolveOrganization(orgCode);
+  const item = await db.query.catalogItems.findFirst({
+    where: and(
+      eq(catalogItems.organizationId, org.id),
+      eq(catalogItems.externalSource, SCHEDULING_SOURCE),
+      eq(catalogItems.externalRef, externalRef),
+      eq(catalogItems.itemType, "FIXED_COST"),
+    ),
+  });
+  if (!item) return false;
+
+  const closed = await db
+    .update(recurringCosts)
+    .set({ effectiveTo })
+    .where(
+      and(
+        eq(recurringCosts.itemId, item.id),
+        eq(recurringCosts.active, true),
+        isNull(recurringCosts.effectiveTo),
+      ),
+    )
+    .returning();
+  return closed.length > 0;
+}
+
 /** Post one FIXED_COST movement per teacher for `month`, using the salary in effect *that* month.
  *  Idempotent per teacher-month (`salary:<teacherId>:<month>`) → safe to re-run. */
 export async function materializeRecurring(

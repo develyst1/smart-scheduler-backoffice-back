@@ -111,6 +111,27 @@ export const setRecurringCost = z.object({
 export const materializeBody = z.object({ month: MONTH });
 export const monthStartBody = z.object({ month: MONTH });
 
+// ── Teacher-sync internal API (SPEC-004 / TASK-015) ──
+const EXTERNAL_REF = z.string().trim().min(1).max(128);
+
+export const teacherSyncOnboard = z.object({
+  externalRef: EXTERNAL_REF,
+  displayName: z.string().trim().min(1).max(256),
+});
+export const teacherSyncUpdate = z.object({
+  externalRef: EXTERNAL_REF,
+  displayName: z.string().trim().min(1).max(256).optional(),
+  active: z.boolean().optional(),
+});
+export const teacherSyncOffboard = z.object({
+  externalRef: EXTERNAL_REF,
+  effectiveMonth: MONTH,
+});
+export const teacherSyncSwitchType = z.object({
+  externalRef: EXTERNAL_REF,
+  effectiveMonth: MONTH,
+});
+
 export const listPartiesQuery = z.object({
   org: z.string().trim().min(1).optional(),
   externalSource: z.string().trim().min(1).optional(),

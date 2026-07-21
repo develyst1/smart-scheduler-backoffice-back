@@ -65,3 +65,68 @@ export async function findPartyByExternal(
   });
   return row ? toPartyDTO(row) : null;
 }
+
+const SCHEDULING_SOURCE = "smart-scheduler";
+
+/** Teacher-sync onboard (TASK-015): upsert the scheduling teacher's ops party by ref — create if
+ *  missing, else reactivate + refresh the name. Idempotent (guards the missing unique constraint). */
+export async function upsertPartyByExternal(
+  externalRef: string,
+  displayName: string,
+  orgCode?: string,
+) {
+  const org = await resolveOrganization(orgCode);
+  const existing = await db.query.parties.findFirst({
+    where: and(
+      eq(parties.organizationId, org.id),
+      eq(parties.externalSource, SCHEDULING_SOURCE),
+      eq(parties.externalRef, externalRef),
+    ),
+  });
+  if (existing) {
+    const [row] = await db
+      .update(parties)
+      .set({ displayName, active: true })
+      .where(eq(parties.id, existing.id))
+      .returning();
+    return toPartyDTO(row);
+  }
+  const [row] = await db
+    .insert(parties)
+    .values({
+      organizationId: org.id,
+      displayName,
+      kind: "PERSON",
+      externalSource: SCHEDULING_SOURCE,
+      externalRef,
+      active: true,
+    })
+    .returning();
+  return toPartyDTO(row);
+}
+
+/** Update a teacher's ops party name/active by ref. Returns null if no party exists (the caller
+ *  decides 404 for edit vs no-op for offboard). */
+export async function updatePartyByExternal(
+  externalRef: string,
+  patch: { displayName?: string; active?: boolean },
+  orgCode?: string,
+) {
+  const org = await resolveOrganization(orgCode);
+  const existing = await db.query.parties.findFirst({
+    where: and(
+      eq(parties.organizationId, org.id),
+      eq(parties.externalSource, SCHEDULING_SOURCE),
+      eq(parties.externalRef, externalRef),
+    ),
+  });
+  if (!existing) return null;
+
+  const set: { displayName?: string; active?: boolean } = {};
+  if (patch.displayName !== undefined) set.displayName = patch.displayName;
+  if (patch.active !== undefined) set.active = patch.active;
+  if (Object.keys(set).length === 0) return toPartyDTO(existing);
+
+  const [row] = await db.update(parties).set(set).where(eq(parties.id, existing.id)).returning();
+  return toPartyDTO(row);
+}
