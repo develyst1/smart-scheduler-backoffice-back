@@ -6,9 +6,11 @@ import { commercialRoutes } from "./commercial";
 import { pricingRoutes } from "./pricing";
 import { reportRoutes } from "./reports";
 import { recurringCostRoutes, internalRoutes } from "./recurring";
+import { authRoutes } from "./auth";
 
 /** Versioned public API — resource names are domain-neutral. */
 export const v1 = new Hono()
+  .route("/auth", authRoutes)
   .route("/catalog/items", catalogRoutes)
   .route("/commerce", commerceRoutes)
   .route("/parties", partyRoutes)

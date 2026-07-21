@@ -4,6 +4,12 @@ export const orgCodeQuery = z.object({
   org: z.string().trim().min(1).optional(),
 });
 
+// Admin login (SPEC-003 / TASK-013).
+export const login = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().min(1),
+});
+
 export const listCatalogQuery = z.object({
   org: z.string().trim().min(1).optional(),
   externalSource: z.string().trim().min(1).optional(),
