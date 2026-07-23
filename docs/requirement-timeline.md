@@ -16,6 +16,19 @@
 
 ---
 
+## 2026-07-20 (PM รอบบ่าย) — ⚠️ PIVOT: รื้อ backoffice ทำใหม่ + โฟกัส frontoffice standalone ก่อน  ⭐ ยึดอันนี้
+> ที่มา: คุณฟีน review backoffice แล้วเห็นว่า **ใช้งานยาก/ไม่ scalable/ไม่ friendly** → สั่งรื้อทำใหม่หมด
+
+- **Backoffice ปัจจุบันจะถูกรื้อทำใหม่ทั้งหมด** (ไว้ทีหลัง) — ของเดิม (item-centric P&L, login, sync) ถือว่า **superseded**
+- **ทำ frontoffice ให้จบก่อน แบบ stand-alone** ไม่พึ่ง backoffice
+- **Freelance limit → ย้ายมาอยู่ frontoffice ล้วน** (เก็บ+จัดการ+บังคับใช้ใน scheduling `public` เอง, เลิกเรียก `OPS_API_URL`)
+  → **REQ-004** (`ai-worker/requirements/REQ-004-*.md`, READY_FOR_SA)
+- **เอาแค่ลิมิต/กันจองเกิน** — freelance **P&L/รายจ่าย + เงินเดือน FT/PT = พักไว้** รอ backoffice ใหม่
+- **REQ-003** (sync ครู↔backoffice ที่ build เสร็จแล้ว) → **ON HOLD ไม่ deploy** (เป้าหมาย sync กำลังจะโดนรื้อ)
+- REQ-001/002 ยัง **DELIVERED** อยู่ แต่ฟีเจอร์ฝั่ง backoffice ของมันจะถูกแทนที่ตอน rebuild
+
+---
+
 ## 2026-07-20 — As-built reconcile: Backoffice pivot เป็น Item-centric P&L (wallet/payroll พักไว้)  ⭐
 > ที่มา: คุณฟีนสั่งให้ทีม AI ทำความเข้าใจโปรเจกต์ทั้งหมดก่อนสั่งงาน · Porter (PM) sweep โค้ดจริงทั้ง 4 repo (2026-07-20)
 > บันทึกนี้แก้ข้อมูลสถานะที่ล้าสมัยในเอกสารเก่าให้ตรงโค้ดจริง — **ยังไม่ตัดสินใจ scope** (รอ stakeholder)
