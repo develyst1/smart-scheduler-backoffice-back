@@ -23,6 +23,7 @@ import {
   uniqueIndex,
   index,
   check,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const ops = pgSchema("ops");
@@ -456,4 +457,122 @@ export const catalogItemsRelations = relations(catalogItems, ({ one, many }) => 
 export const accountsRelations = relations(accounts, ({ one, many }) => ({
   party: one(parties, { fields: [accounts.partyId], references: [parties.id] }),
   ledger: many(accountLedger),
+}));
+
+// ═════════════════════════════════════════════════════════════════════════════
+// REQ-006 backoffice rebuild — universal item/movement model in a NEW `bo` schema
+// (same PostgreSQL). Everything is an `item` (direction × cadence, optional ceiling)
+// and quantity moves via signed `movement`. Grouping via tags. No roles/approvals.
+// The old `ops.*` above is left DORMANT (referenced by the data migration, TASK-025).
+// ═════════════════════════════════════════════════════════════════════════════
+
+export const bo = pgSchema("bo");
+
+export const boDirection = bo.enum("direction", ["INCOME", "EXPENSE"]);
+export const boCadence = bo.enum("cadence", [
+  "VARIABLE",
+  "FIXED_MONTHLY",
+  "FIXED_DAILY",
+  "FIXED_QUARTERLY",
+]);
+
+export const boItem = bo.table(
+  "item",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    unit: text("unit").notNull().default("each"), // free-text (hour, month, piece, …)
+    direction: boDirection("direction").notNull(), // INCOME | EXPENSE (fixed after create)
+    cadence: boCadence("cadence").notNull().default("VARIABLE"),
+    ceilingQty: integer("ceiling_qty"), // optional cap (e.g. monthly freelance hours)
+    remainingQty: integer("remaining_qty"), // current remaining under the ceiling
+    unitPriceMinor: integer("unit_price_minor").notNull().default(0), // money per unit (satang)
+    ownerRef: text("owner_ref"), // e.g. scheduling teacherId
+    externalSource: text("external_source"), // e.g. 'smart-scheduler'
+    active: boolean("active").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [index("bo_item_owner_idx").on(t.externalSource, t.ownerRef)],
+);
+
+export const boMovement = bo.table(
+  "movement",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => boItem.id, { onDelete: "cascade" }),
+    qty: integer("qty").notNull(), // signed: + in / − out
+    remainingAfter: integer("remaining_after"),
+    valueMinor: integer("value_minor").notNull().default(0), // |qty| × unit_price → P&L
+    reason: text("reason"),
+    refType: text("ref_type"),
+    refId: text("ref_id"),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("bo_movement_idempotency_uq").on(t.idempotencyKey),
+    index("bo_movement_item_idx").on(t.itemId, t.createdAt),
+  ],
+);
+
+export const boTagGroup = bo.table("tag_group", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const boTagValue = bo.table("tag_value", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tagGroupId: uuid("tag_group_id")
+    .notNull()
+    .references(() => boTagGroup.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  color: text("color"),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const boItemTag = bo.table(
+  "item_tag",
+  {
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => boItem.id, { onDelete: "cascade" }),
+    tagValueId: uuid("tag_value_id")
+      .notNull()
+      .references(() => boTagValue.id, { onDelete: "cascade" }),
+    tagGroupId: uuid("tag_group_id")
+      .notNull()
+      .references(() => boTagGroup.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.tagValueId] }),
+    uniqueIndex("bo_item_tag_group_uq").on(t.itemId, t.tagGroupId),
+  ],
+);
+
+export const boItemRelations = relations(boItem, ({ many }) => ({
+  movements: many(boMovement),
+  itemTags: many(boItemTag),
+}));
+
+export const boMovementRelations = relations(boMovement, ({ one }) => ({
+  item: one(boItem, { fields: [boMovement.itemId], references: [boItem.id] }),
+}));
+
+export const boTagValueRelations = relations(boTagValue, ({ one }) => ({
+  group: one(boTagGroup, { fields: [boTagValue.tagGroupId], references: [boTagGroup.id] }),
+}));
+
+export const boItemTagRelations = relations(boItemTag, ({ one }) => ({
+  item: one(boItem, { fields: [boItemTag.itemId], references: [boItem.id] }),
+  value: one(boTagValue, { fields: [boItemTag.tagValueId], references: [boTagValue.id] }),
 }));

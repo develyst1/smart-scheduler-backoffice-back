@@ -29,6 +29,13 @@
       "when": 1784531451038,
       "tag": "0003_even_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784531451039,
+      "tag": "0004_bo_schema",
+      "breakpoints": true
     }
   ]
 }

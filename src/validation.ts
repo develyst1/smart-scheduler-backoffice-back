@@ -111,6 +111,81 @@ export const setRecurringCost = z.object({
 export const materializeBody = z.object({ month: MONTH });
 export const monthStartBody = z.object({ month: MONTH });
 
+// ── Backoffice rebuild — bo items/movements/tags (SPEC-006 / TASK-022) ──
+const BO_DIRECTION = z.enum(["INCOME", "EXPENSE"]);
+const BO_CADENCE = z.enum(["VARIABLE", "FIXED_MONTHLY", "FIXED_DAILY", "FIXED_QUARTERLY"]);
+
+export const listBoItemsQuery = z.object({
+  direction: BO_DIRECTION.optional(),
+  cadence: BO_CADENCE.optional(),
+  active: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
+  tagValueId: z.string().uuid().optional(),
+});
+
+export const createBoItem = z.object({
+  name: z.string().trim().min(1).max(256),
+  unit: z.string().trim().min(1).max(32).optional(),
+  direction: BO_DIRECTION,
+  cadence: BO_CADENCE.optional(),
+  unitPriceMinor: z.number().int().min(0).optional(),
+  ceilingQty: z.number().int().nullable().optional(),
+  ownerRef: z.string().trim().max(128).optional(),
+  externalSource: z.string().trim().max(64).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const updateBoItem = z.object({
+  name: z.string().trim().min(1).max(256).optional(),
+  unitPriceMinor: z.number().int().min(0).optional(),
+  ceilingQty: z.number().int().nullable().optional(),
+  cadence: BO_CADENCE.optional(),
+  active: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const boMovementBody = z.object({
+  qty: z.number().int(),
+  reason: z.string().trim().max(500).optional(),
+  refType: z.string().trim().max(64).optional(),
+  refId: z.string().trim().max(128).optional(),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+  allowNegative: z.boolean().optional(),
+});
+
+export const boListMovementsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const boPlQuery = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
+export const createTagGroup = z.object({
+  name: z.string().trim().min(1).max(128),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createTagValue = z.object({
+  tagGroupId: z.string().uuid(),
+  label: z.string().trim().min(1).max(128),
+  color: z.string().trim().max(32).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const setItemTags = z.object({
+  tagValueIds: z.array(z.string().uuid()),
+});
+
 // ── Teacher-sync internal API (SPEC-004 / TASK-015) ──
 const EXTERNAL_REF = z.string().trim().min(1).max(128);
 

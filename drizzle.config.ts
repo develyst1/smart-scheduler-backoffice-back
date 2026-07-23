@@ -8,5 +8,5 @@ export default defineConfig({
     url: process.env.DATABASE_URL!,
   },
   casing: "snake_case",
-  schemaFilter: ["ops"],
+  schemaFilter: ["ops", "bo"],
 });

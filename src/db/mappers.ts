@@ -1,6 +1,10 @@
 import type {
   accountLedger,
   accounts,
+  boItem,
+  boMovement,
+  boTagGroup,
+  boTagValue,
   catalogItems,
   commercialRequests,
   parties,
@@ -9,6 +13,58 @@ import type {
   stockBalances,
   stockMovements,
 } from "../db/schema";
+
+// ── REQ-006 backoffice (bo.*) DTOs ──
+export function toBoItemDTO(row: typeof boItem.$inferSelect, tagValueIds: string[] = []) {
+  return {
+    id: row.id,
+    name: row.name,
+    unit: row.unit,
+    direction: row.direction,
+    cadence: row.cadence,
+    ceilingQty: row.ceilingQty,
+    remainingQty: row.remainingQty,
+    unitPriceMinor: row.unitPriceMinor,
+    ownerRef: row.ownerRef,
+    externalSource: row.externalSource,
+    active: row.active,
+    metadata: row.metadata ?? null,
+    // The item's assigned tag values (one per group) — lets the FE prefill the tag editor so an
+    // edit doesn't wipe existing tags via the replace-all PUT.
+    tagValueIds,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toBoMovementDTO(row: typeof boMovement.$inferSelect) {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    qty: row.qty,
+    remainingAfter: row.remainingAfter,
+    valueMinor: row.valueMinor,
+    reason: row.reason,
+    refType: row.refType,
+    refId: row.refId,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toBoTagGroupDTO(row: typeof boTagGroup.$inferSelect) {
+  return { id: row.id, name: row.name, active: row.active, sortOrder: row.sortOrder };
+}
+
+export function toBoTagValueDTO(row: typeof boTagValue.$inferSelect) {
+  return {
+    id: row.id,
+    tagGroupId: row.tagGroupId,
+    label: row.label,
+    color: row.color,
+    active: row.active,
+    sortOrder: row.sortOrder,
+  };
+}
 
 export function toCatalogItemDTO(
   item: typeof catalogItems.$inferSelect,
