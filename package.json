@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "bun run src/db/seed.ts",
+    "migrate:bo": "bun run src/db/migrate-to-bo.ts",
     "smoke": "bun run scripts/smoke.ts",
     "test": "bun test"
   },
