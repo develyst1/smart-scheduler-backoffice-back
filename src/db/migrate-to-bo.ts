@@ -188,11 +188,28 @@ async function migrateFreelanceBudgets() {
   return n;
 }
 
+/** After the shared-DB fix (TASK-027) backoffice-back points at `smart_scheduler` where `ops.*` doesn't
+ *  exist. The ops passes then skip cleanly; the `public.freelance_budgets` pass is the essential one. */
+async function opsSchemaPresent(): Promise<boolean> {
+  const rows = (await db.execute(
+    sql`SELECT 1 FROM information_schema.tables WHERE table_schema = 'ops' AND table_name = 'catalog_items' LIMIT 1`,
+  )) as unknown as unknown[];
+  return rows.length > 0;
+}
+
 async function main() {
   console.log("Migrating ops.* + public.freelance_budgets → bo.* …");
-  const { n: items, idMap } = await migrateCatalogItems();
-  const movements = await migrateMovements(idMap);
-  const salaries = await migrateRecurringSalary();
+  let items = 0;
+  let movements = 0;
+  let salaries = 0;
+  if (await opsSchemaPresent()) {
+    const cat = await migrateCatalogItems();
+    items = cat.n;
+    movements = await migrateMovements(cat.idMap);
+    salaries = await migrateRecurringSalary();
+  } else {
+    console.log("ops.* not present in this database — skipping ops passes (freelance-only migration).");
+  }
   const freelance = await migrateFreelanceBudgets();
   console.log(
     `Done. catalog_items=${items}, movements=${movements}, salary_corrections=${salaries}, freelance=${freelance}`,
