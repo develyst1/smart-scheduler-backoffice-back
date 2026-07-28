@@ -19,6 +19,7 @@
  */
 import { eq, sql } from "drizzle-orm";
 import { db, queryClient } from "./index";
+import { pgErrorCode } from "../lib/http";
 import {
   boItem,
   boMovement,
@@ -203,10 +204,21 @@ async function main() {
   let movements = 0;
   let salaries = 0;
   if (await opsSchemaPresent()) {
-    const cat = await migrateCatalogItems();
-    items = cat.n;
-    movements = await migrateMovements(cat.idMap);
-    salaries = await migrateRecurringSalary();
+    // The table exists, but on a legacy/drifted `ops` schema (e.g. `0001_item_pl` never applied →
+    // `item_group` missing) the ops passes throw a schema-shape error. Degrade to freelance-only rather
+    // than aborting the ESSENTIAL freelance pass — the ops data is non-essential post-pivot (TASK-030).
+    try {
+      const cat = await migrateCatalogItems();
+      items = cat.n;
+      movements = await migrateMovements(cat.idMap);
+      salaries = await migrateRecurringSalary();
+    } catch (err) {
+      const code = pgErrorCode(err); // 42P01 undefined_table / 42703 undefined_column = drifted ops
+      if (code !== "42P01" && code !== "42703") throw err; // real failure → don't mask it
+      console.warn(
+        `ops schema present but drifted (${code}) — skipping ops passes; migrating freelance budgets only.`,
+      );
+    }
   } else {
     console.log("ops.* not present in this database — skipping ops passes (freelance-only migration).");
   }
