@@ -56,3 +56,52 @@ describe("bo API — admin-JWT on writes (TASK-022)", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ── TASK-068 — 🔐 the reads are guarded too, not just the writes ────────────────────────────────────
+// The P&L was readable with no token at all: REQ-014's "finance is executive-only because it lives on the
+// backoffice" was true of the UI and false of the API. Asserting per route, because "I added the middleware"
+// and "the middleware actually runs on this route" are different claims.
+const ID = "00000000-0000-0000-0000-000000000000";
+const GUARDED_READS = [
+  "/bo/reports/pl", // the route this task exists for
+  "/bo/reports/revenue-by-activity?month=2026-07",
+  "/bo/reports/customer-spend?month=2026-07",
+  `/bo/items/${ID}/movements`, // money history
+  "/bo/items", // prices + freelance ceilings (a teacher's pay rate)
+  `/bo/items/${ID}`,
+  "/bo/tag-groups",
+];
+
+describe("bo API — reads require the admin JWT (TASK-068)", () => {
+  test.each(GUARDED_READS)("GET %s with no token → 401", async (path) => {
+    expect((await app().request(path)).status).toBe(401);
+  });
+
+  test.each(GUARDED_READS)("GET %s with a malformed token → 401", async (path) => {
+    const res = await app().request(path, { headers: { Authorization: "Bearer not-a-jwt" } });
+    expect(res.status).toBe(401);
+  });
+
+  test("🔑 a VALID token gets past the guard — proves it isn't just rejecting everything", async () => {
+    // Bad `from` reaches the validator only after adminAuth has passed ⇒ 400, not 401.
+    const token = await signToken({ sub: "admin", role: "admin" });
+    const res = await app().request("/bo/reports/pl?from=not-a-date", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("🔑 every GET in the router is guarded — a new unguarded read fails this", async () => {
+    // Walks Hono's own route table rather than a hand-kept list, so adding an open GET breaks the build
+    // instead of quietly re-opening the surface this task closed.
+    const gets = app()
+      .routes.filter((r) => r.method === "GET")
+      .map((r) => r.path);
+    const guarded = new Set(
+      app()
+        .routes.filter((r) => r.handler.name === "adminAuth")
+        .map((r) => r.path),
+    );
+    expect(gets.filter((p) => !guarded.has(p))).toEqual([]);
+  });
+});
