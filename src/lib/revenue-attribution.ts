@@ -14,8 +14,15 @@
 
 export type ProductKind = "COURSE" | "VOUCHER" | "BOOKING";
 
-/** Why a sale couldn't be attributed to a sport. `voucher` is by nature; the other two are faults. */
-export type UnattributedReason = "voucher" | "unresolved" | "unknown-code";
+/**
+ * Why a sale couldn't be attributed to a sport. `VOUCHER` is by nature; the other two are faults.
+ *
+ * ⚠️ **These codes are the vocabulary end to end** (TASK-083) — the same values travel from `attributeSales`
+ * to the API response. The API supplies **identity**; the FE supplies **language**. My first version composed
+ * an English sentence instead, which fused the two and rendered as a stray English string on a Thai
+ * executive's screen — the same mistake as TASK-053's missing `titleKey`, which I should have recognised.
+ */
+export type UnattributedReason = "VOUCHER" | "UNRESOLVED_REF" | "UNKNOWN_CODE";
 
 export interface SaleMovement {
   refId: string | null;
@@ -96,7 +103,7 @@ export function attributeSales(
 
     if (kind === null) {
       // A code we don't know how to follow. It must NOT quietly look like a voucher.
-      return { ...base, studentId: null, subjectId: null, reason: "unknown-code" };
+      return { ...base, studentId: null, subjectId: null, reason: "UNKNOWN_CODE" };
     }
     if (kind === "VOUCHER") {
       const v = s.refId ? sources.vouchers.get(s.refId) : undefined;
@@ -106,7 +113,7 @@ export function attributeSales(
         ...base,
         studentId: v?.studentId ?? null,
         subjectId: null,
-        reason: v ? "voucher" : "unresolved",
+        reason: v ? "VOUCHER" : "UNRESOLVED_REF",
       };
     }
     const row = s.refId
@@ -114,14 +121,14 @@ export function attributeSales(
         ? sources.courses.get(s.refId)
         : sources.bookings.get(s.refId)
       : undefined;
-    if (!row) return { ...base, studentId: null, subjectId: null, reason: "unresolved" };
+    if (!row) return { ...base, studentId: null, subjectId: null, reason: "UNRESOLVED_REF" };
 
     const subjectId = row.subjectId ?? null;
     return {
       ...base,
       studentId: row.studentId,
       subjectId,
-      ...(subjectId ? {} : { reason: "unresolved" as const }),
+      ...(subjectId ? {} : { reason: "UNRESOLVED_REF" as const }),
     };
   });
 }
@@ -131,19 +138,39 @@ export interface RevenueBucket {
   name: string;
   amountMinor: number;
 }
+export interface UnattributedReasonRow {
+  code: UnattributedReason;
+  count: number;
+  /** ⚠️ "3 vouchers" is less useful than "3 vouchers, ฿9,000" when deciding whether the gap matters. */
+  amountMinor: number;
+}
+
 export interface RevenueByActivity {
   month: string;
   totalMinor: number;
   buckets: RevenueBucket[];
+  /** TASK-083 — the structured form. `sum(reasons.amountMinor) === totalMinor` of this object. */
+  unattributed: {
+    totalMinor: number;
+    reasons: UnattributedReasonRow[];
+  };
+  /** @deprecated TASK-083 — same number as `unattributed.totalMinor`; kept so TASK-065 doesn't break
+   *  mid-build. Derived, never computed separately. */
   unattributedMinor: number;
+  /** @deprecated TASK-083 — **English prose on a Thai screen**. Derived from `unattributed.reasons` so the
+   *  two can't drift, and safe to delete once Fern renders from the codes. Never parse this. */
   unattributedReason: string;
 }
 
 const REASON_LABEL: Record<UnattributedReason, string> = {
-  voucher: "vouchers (generic hours — no sport at sale)",
-  unresolved: "sales whose reference no longer resolves",
-  "unknown-code": "⚠️ sales with an unrecognised product code",
+  VOUCHER: "vouchers (generic hours — no sport at sale)",
+  UNRESOLVED_REF: "sales whose reference no longer resolves",
+  UNKNOWN_CODE: "⚠️ sales with an unrecognised product code",
 };
+
+/** Stable order, so the FE renders the same sequence every time and `VOUCHER` (expected) reads before the
+ *  two faults. */
+const REASON_ORDER: UnattributedReason[] = ["VOUCHER", "UNRESOLVED_REF", "UNKNOWN_CODE"];
 
 /**
  * Group by sport. The `unattributed` bucket is a **requirement, not an edge case**: a finance report that
@@ -156,7 +183,7 @@ export function groupBySubject(
   subjectName: (id: string) => string,
 ): RevenueByActivity {
   const byId = new Map<string, number>();
-  const reasons = new Map<UnattributedReason, number>();
+  const tally = new Map<UnattributedReason, { count: number; amountMinor: number }>();
   let unattributedMinor = 0;
   let totalMinor = 0;
 
@@ -166,10 +193,20 @@ export function groupBySubject(
       byId.set(a.subjectId, (byId.get(a.subjectId) ?? 0) + a.amountMinor);
     } else {
       unattributedMinor += a.amountMinor;
-      const r = a.reason ?? "unresolved";
-      reasons.set(r, (reasons.get(r) ?? 0) + 1);
+      const code = a.reason ?? "UNRESOLVED_REF";
+      const row = tally.get(code) ?? { count: 0, amountMinor: 0 };
+      row.count += 1;
+      row.amountMinor += a.amountMinor;
+      tally.set(code, row);
     }
   }
+
+  // Accumulated in ONE pass alongside `unattributedMinor`, so `sum(reasons.amountMinor)` and
+  // `unattributed.totalMinor` cannot disagree — a second number is a second chance to be wrong.
+  const reasons: UnattributedReasonRow[] = REASON_ORDER.filter((c) => tally.has(c)).map((code) => ({
+    code,
+    ...tally.get(code)!,
+  }));
 
   return {
     month,
@@ -177,20 +214,21 @@ export function groupBySubject(
     buckets: [...byId.entries()]
       .map(([subjectId, amountMinor]) => ({ subjectId, name: subjectName(subjectId), amountMinor }))
       .sort((a, b) => b.amountMinor - a.amountMinor),
-    unattributedMinor,
-    unattributedReason: describeUnattributed(reasons),
+    unattributed: { totalMinor: unattributedMinor, reasons },
+    unattributedMinor, // deprecated mirror
+    unattributedReason: describeUnattributed(reasons), // deprecated, DERIVED from the codes
   };
 }
 
-/** Names the reasons **with counts**, so an unrecognised product code can never hide inside a total that
- *  reads as "just vouchers". */
-export function describeUnattributed(reasons: Map<UnattributedReason, number>): string {
-  if (reasons.size === 0) return "";
-  const order: UnattributedReason[] = ["voucher", "unresolved", "unknown-code"];
-  return order
-    .filter((r) => reasons.has(r))
-    .map((r) => `${reasons.get(r)} ${REASON_LABEL[r]}`)
-    .join("; ");
+/**
+ * The deprecated English sentence, **derived from the codes** so it can never drift from them.
+ *
+ * Kept only so TASK-065 doesn't break mid-build. It is English prose on a Thai executive's screen, which is
+ * the bug TASK-083 exists to fix — the FE should render from `unattributed.reasons`, and this can then go.
+ * ⚠️ Never parse it: recovering numbers by splitting a sentence is a bug waiting to happen.
+ */
+export function describeUnattributed(reasons: UnattributedReasonRow[]): string {
+  return reasons.map((r) => `${r.count} ${REASON_LABEL[r.code]}`).join("; ");
 }
 
 export interface CustomerSpend {

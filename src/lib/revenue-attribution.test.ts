@@ -61,19 +61,19 @@ describe("attributeSales — the one map", () => {
   test("🔑 a voucher has NO sport but DOES have a customer — the reason one map serves both reports", () => {
     const [a] = attributeSales([sale("voucher-10", "v1", 9000)], sources);
     expect(a.subjectId).toBeNull();
-    expect(a.reason).toBe("voucher");
+    expect(a.reason).toBe("VOUCHER");
     expect(a.studentId).toBe(STU_B); // ← unattributed by sport, fully attributed by customer
   });
 
   test("🔑 a sale whose refId no longer resolves is kept as unresolved — not dropped, not thrown", () => {
     const [a] = attributeSales([sale("course-6", "gone", 5000)], sources);
-    expect(a).toMatchObject({ studentId: null, subjectId: null, reason: "unresolved" });
+    expect(a).toMatchObject({ studentId: null, subjectId: null, reason: "UNRESOLVED_REF" });
     expect(a.amountMinor).toBe(5000); // the money survives, which is what keeps the total honest
   });
 
   test("an unrecognised product code is flagged as such, NOT lumped in with vouchers", () => {
     const [a] = attributeSales([sale("membership-1", "x", 700)], sources);
-    expect(a.reason).toBe("unknown-code");
+    expect(a.reason).toBe("UNKNOWN_CODE");
   });
 
   test("a course with no bookings yet has no sport — unresolved, and its money still counts", () => {
@@ -81,7 +81,7 @@ describe("attributeSales — the one map", () => {
       ...sources,
       courses: new Map([["c2", { studentId: STU_A, subjectId: null }]]),
     });
-    expect(a).toMatchObject({ studentId: STU_A, subjectId: null, reason: "unresolved" });
+    expect(a).toMatchObject({ studentId: STU_A, subjectId: null, reason: "UNRESOLVED_REF" });
   });
 
   test("every sale comes out exactly once — the identity below depends on it", () => {
@@ -201,5 +201,72 @@ describe("🔴 month boundary in Bangkok (TASK-062's lesson — here it would MO
 
   test("December rolls into the next year, not month 13", () => {
     expect(bangkokMonthRangeUtc("2026-12").end.toISOString()).toBe("2026-12-31T17:00:00.000Z");
+  });
+});
+
+// ── TASK-083 — reason CODES, not English prose ──────────────────────────────────────────────────────
+describe("🔴 unattributed.reasons — the API supplies identity, the FE supplies language", () => {
+  const mixed = [
+    sale("course-6", "c1", 5000), // → ว่ายน้ำ
+    sale("voucher-10", "v1", 9000), // → VOUCHER
+    sale("voucher-10", "gone", 1500), // → UNRESOLVED_REF (voucher whose ref died)
+    sale("course-6", "gone", 2500), // → UNRESOLVED_REF
+    sale("membership-1", "x", 700), // → UNKNOWN_CODE
+  ];
+  const r = () => groupBySubject(attributeSales(mixed, sources), "2026-07", names);
+
+  test("🔑 each reason carries a CODE, a count and an AMOUNT", () => {
+    const byCode = new Map(r().unattributed.reasons.map((x) => [x.code, x]));
+    expect(byCode.get("VOUCHER")).toEqual({ code: "VOUCHER", count: 1, amountMinor: 9000 });
+    expect(byCode.get("UNRESOLVED_REF")).toEqual({
+      code: "UNRESOLVED_REF",
+      count: 2,
+      amountMinor: 4000, // 1500 + 2500 — the amount is the point: "2 sales" alone doesn't say if it matters
+    });
+    expect(byCode.get("UNKNOWN_CODE")).toEqual({ code: "UNKNOWN_CODE", count: 1, amountMinor: 700 });
+  });
+
+  test("🔴 an unrecognised code is NEVER folded into VOUCHER — a voucher is expected, a bad code is a fault", () => {
+    const codes = r().unattributed.reasons.map((x) => x.code);
+    expect(codes).toContain("UNKNOWN_CODE");
+    expect(codes).toContain("VOUCHER");
+    expect(new Set(codes).size).toBe(codes.length); // no code appears twice
+  });
+
+  test("🔴 BOTH sum identities hold — a second number is a second chance to disagree", () => {
+    const x = r();
+    const buckets = x.buckets.reduce((s, b) => s + b.amountMinor, 0);
+    expect(buckets + x.unattributed.totalMinor).toBe(x.totalMinor); // identity 1
+    expect(x.unattributed.reasons.reduce((s, y) => s + y.amountMinor, 0)).toBe(
+      x.unattributed.totalMinor, // identity 2 (new)
+    );
+  });
+
+  test("both identities still hold with nothing unattributable, and with no sales at all", () => {
+    for (const x of [
+      groupBySubject(attributeSales([sale("course-6", "c1", 5000)], sources), "2026-07", names),
+      groupBySubject([], "2026-07", names),
+    ]) {
+      expect(x.buckets.reduce((s, b) => s + b.amountMinor, 0) + x.unattributed.totalMinor).toBe(x.totalMinor);
+      expect(x.unattributed.reasons.reduce((s, y) => s + y.amountMinor, 0)).toBe(x.unattributed.totalMinor);
+      expect(x.unattributed.reasons).toHaveLength(0);
+    }
+  });
+
+  test("reasons come back in a stable order — VOUCHER (expected) before the two faults", () => {
+    expect(r().unattributed.reasons.map((x) => x.code)).toEqual([
+      "VOUCHER",
+      "UNRESOLVED_REF",
+      "UNKNOWN_CODE",
+    ]);
+  });
+
+  test("the deprecated mirrors are DERIVED, so they cannot drift from the codes", () => {
+    const x = r();
+    expect(x.unattributedMinor).toBe(x.unattributed.totalMinor);
+    // The sentence is built from the same rows — counts in it match the codes exactly.
+    for (const row of x.unattributed.reasons) {
+      expect(x.unattributedReason).toContain(String(row.count));
+    }
   });
 });
