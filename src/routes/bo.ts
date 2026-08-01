@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import * as v from "../validation";
 import * as items from "../services/item.service";
 import * as tags from "../services/tag.service";
+import * as revenue from "../services/revenue.service";
 import { adminAuth } from "../middleware/auth";
 
 // REQ-006 / TASK-022 — the rebuilt backoffice API on the universal `bo` model. Mounted under
@@ -42,4 +43,14 @@ export const boRoutes = new Hono()
   // ── P&L report ──
   .get("/reports/pl", zValidator("query", v.boPlQuery), async (c) =>
     c.json(await items.getPLReport(c.req.valid("query"))),
-  );
+  )
+  // ── Revenue reports (SPEC-021 / TASK-064). Read-only; no writes, no migration.
+  //    ⚠️ Behind `adminAuth`, unlike `/reports/pl` above — see the task notes. REQ-014 is explicitly
+  //    "executive-only", and customer-spend pairs a student's name with what their family has paid.
+  .get("/reports/revenue-by-activity", adminAuth, zValidator("query", v.revenueByActivityQuery), async (c) =>
+    c.json(await revenue.getRevenueByActivity(c.req.valid("query").month)),
+  )
+  .get("/reports/customer-spend", adminAuth, zValidator("query", v.customerSpendQuery), async (c) => {
+    const q = c.req.valid("query");
+    return c.json(await revenue.getCustomerSpend(q.month, q.q));
+  });

@@ -282,3 +282,15 @@ export const createPriceRule = z.object({
   validTo: z.string().datetime().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
+
+// ── Revenue reports (SPEC-021 / TASK-064) ──
+// `month` is required: these are month-bucketed money reports, and defaulting it server-side would let two
+// staff at a month boundary read different months and both believe the dashboard is wrong.
+export const revenueByActivityQuery = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+});
+
+export const customerSpendQuery = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  q: z.string().trim().min(1).optional(),
+});

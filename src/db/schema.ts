@@ -13,6 +13,8 @@
 import { relations, sql } from "drizzle-orm";
 import {
   pgSchema,
+  pgTable,
+  smallint,
   uuid,
   text,
   boolean,
@@ -487,8 +489,12 @@ export const boItem = bo.table(
     ceilingQty: integer("ceiling_qty"), // optional cap (e.g. monthly freelance hours)
     remainingQty: integer("remaining_qty"), // current remaining under the ceiling
     unitPriceMinor: integer("unit_price_minor").notNull().default(0), // money per unit (satang)
-    ownerRef: text("owner_ref"), // e.g. scheduling teacherId
+    ownerRef: text("owner_ref"), // e.g. scheduling teacherId — teacher identity ONLY, never a product code
     externalSource: text("external_source"), // e.g. 'smart-scheduler'
+    // Product code for sale posting: "course-6" / "voucher-10" / "first-trial" / "single-session"
+    // (TASK-066). Unique with external_source. Deliberately separate from ownerRef — one column,
+    // one meaning.
+    externalRef: text("external_ref"),
     active: boolean("active").notNull().default(true),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -576,3 +582,48 @@ export const boItemTagRelations = relations(boItemTag, ({ one }) => ({
   item: one(boItem, { fields: [boItemTag.itemId], references: [boItem.id] }),
   value: one(boTagValue, { fields: [boItemTag.tagValueId], references: [boTagValue.id] }),
 }));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// READ-ONLY declarations of the scheduling app's `public` tables (SPEC-021 / TASK-064).
+//
+// ⚠️ OWNERSHIP RULE — backoffice-back **READS** these and **never writes or migrates them**.
+// `public` migrations stay owned by smart-scheduler-back. There is one database since REQ-006, so this is a
+// plain join; it mirrors the direction REQ-006 already chose (scheduling-back touches `bo.item` directly
+// rather than over HTTP), so it is the established pattern here, not a new liberty.
+//
+// Only the columns the revenue-attribution join actually needs are declared — a narrow declaration can't
+// tempt anyone into writing through it, and it won't drift when scheduling-back adds a column.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const pubStudents = pgTable("students", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  nickname: text("nickname"),
+});
+
+export const pubSubjects = pgTable("subjects", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+});
+
+export const pubCoursePackages = pgTable("course_packages", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id").notNull(),
+  size: smallint("size").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const pubVouchers = pgTable("vouchers", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id").notNull(),
+  totalHours: smallint("total_hours").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const pubBookings = pgTable("bookings", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  courseId: uuid("course_id"),
+  date: date("date").notNull(),
+});
