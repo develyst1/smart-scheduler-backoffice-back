@@ -41,6 +41,9 @@ async function loadAttributedSales(month: string): Promise<AttributedSale[]> {
       productCode: boItem.externalRef,
       valueMinor: boMovement.valueMinor,
       createdAt: boMovement.createdAt,
+      // TASK-159: needed for the gross/discount/net split. Attribution ignores it — a DISCOUNT already lands on
+      // its sale's sport because it carries the same item and refId.
+      movementReason: boMovement.reason,
     })
     .from(boMovement)
     .innerJoin(boItem, eq(boItem.id, boMovement.itemId))

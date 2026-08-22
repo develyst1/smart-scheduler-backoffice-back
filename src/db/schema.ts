@@ -520,6 +520,11 @@ export const boMovement = bo.table(
     refType: text("ref_type"),
     refId: text("ref_id"),
     idempotencyKey: text("idempotency_key"),
+    // SPEC-059 / TASK-159 (REQ-063): a discount movement records the money; these record the DECISION behind
+    // it — who authorised it and what it was for (`โปรวันแม่`). Nullable + additive (`0006`): every existing
+    // movement is untouched, and nothing reads them until TASK-160 starts writing them.
+    actor: text("actor"),
+    note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

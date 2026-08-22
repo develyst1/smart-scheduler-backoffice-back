@@ -33,11 +33,19 @@ const sources: AttributionSources = {
 const names = (id: string) => ({ [SWIM]: "ว่ายน้ำ", [FOOT]: "ฟุตบอล", [STU_A]: "เอ", [STU_B]: "บี" })[id] ?? id;
 
 describe("productKind — an unknown code must never look like an ordinary voucher", () => {
-  test("the four shapes the codes actually take", () => {
-    expect(productKind("course-6")).toBe("COURSE");
+  // 🔴 TASK-159: this used to assert `course-6` — a code that has not existed since TASK-077 made courses
+  // program-priced. The test passed while the product was broken: every real course sale fell to UNKNOWN_CODE.
+  test("the shapes the codes actually take TODAY", () => {
+    expect(productKind("course-onewheel-6")).toBe("COURSE");
     expect(productKind("voucher-10")).toBe("VOUCHER");
     expect(productKind("first-trial")).toBe("BOOKING");
-    expect(productKind("single-session")).toBe("BOOKING");
+    expect(productKind("single-session")).toBe("BOOKING"); // legacy code, still on pre-TASK-077 rows
+    expect(productKind("course-bike-skate-10")).toBe("COURSE"); // a hyphenated group still resolves
+    expect(productKind("session-onewheel")).toBe("BOOKING");
+  });
+
+  test("the OLD size-only course code no longer matches — nothing writes it any more", () => {
+    expect(productKind("course-6")).toBeNull();
   });
   test("anything else is null — surfaced, not absorbed", () => {
     expect(productKind("membership-1")).toBeNull();
@@ -48,7 +56,7 @@ describe("productKind — an unknown code must never look like an ordinary vouch
 
 describe("attributeSales — the one map", () => {
   test("🔑 a course sale lands on its bookings' sport", () => {
-    const [a] = attributeSales([sale("course-6", "c1", 5000)], sources);
+    const [a] = attributeSales([sale("course-onewheel-6", "c1", 5000)], sources);
     expect(a).toMatchObject({ kind: "COURSE", studentId: STU_A, subjectId: SWIM });
     expect(a.reason).toBeUndefined();
   });
@@ -66,7 +74,7 @@ describe("attributeSales — the one map", () => {
   });
 
   test("🔑 a sale whose refId no longer resolves is kept as unresolved — not dropped, not thrown", () => {
-    const [a] = attributeSales([sale("course-6", "gone", 5000)], sources);
+    const [a] = attributeSales([sale("course-onewheel-6", "gone", 5000)], sources);
     expect(a).toMatchObject({ studentId: null, subjectId: null, reason: "UNRESOLVED_REF" });
     expect(a.amountMinor).toBe(5000); // the money survives, which is what keeps the total honest
   });
@@ -77,7 +85,7 @@ describe("attributeSales — the one map", () => {
   });
 
   test("a course with no bookings yet has no sport — unresolved, and its money still counts", () => {
-    const [a] = attributeSales([sale("course-4", "c2", 4000)], {
+    const [a] = attributeSales([sale("course-balance-group-6", "c2", 4000)], {
       ...sources,
       courses: new Map([["c2", { studentId: STU_A, subjectId: null }]]),
     });
@@ -85,17 +93,17 @@ describe("attributeSales — the one map", () => {
   });
 
   test("every sale comes out exactly once — the identity below depends on it", () => {
-    const sales = [sale("course-6", "c1", 1), sale("voucher-10", "v1", 2), sale("nope", null, 3)];
+    const sales = [sale("course-onewheel-6", "c1", 1), sale("voucher-10", "v1", 2), sale("nope", null, 3)];
     expect(attributeSales(sales, sources)).toHaveLength(3);
   });
 });
 
 describe("🔴 buckets + unattributed === total — the report's correctness check", () => {
   const mixed = [
-    sale("course-6", "c1", 5000), // → ว่ายน้ำ
+    sale("course-onewheel-6", "c1", 5000), // → ว่ายน้ำ
     sale("first-trial", "b1", 1390), // → ฟุตบอล
     sale("voucher-10", "v1", 9000), // → unattributed (voucher)
-    sale("course-6", "gone", 2500), // → unattributed (unresolved)
+    sale("course-onewheel-6", "gone", 2500), // → unattributed (unresolved)
     sale("membership-1", "x", 700), // → unattributed (unknown code)
   ];
 
@@ -133,10 +141,10 @@ describe("🔴 buckets + unattributed === total — the report's correctness che
 
 describe("groupByStudent — the SAME list, grouped the other way", () => {
   const mixed = [
-    sale("course-6", "c1", 5000),
+    sale("course-onewheel-6", "c1", 5000),
     sale("first-trial", "b1", 1390),
     sale("voucher-10", "v1", 9000),
-    sale("course-6", "gone", 2500), // no customer → omitted here, still in revenue's unattributed
+    sale("course-onewheel-6", "gone", 2500), // no customer → omitted here, still in revenue's unattributed
   ];
 
   test("🔑 a voucher counts fully against its customer even though it has no sport", () => {
@@ -207,10 +215,10 @@ describe("🔴 month boundary in Bangkok (TASK-062's lesson — here it would MO
 // ── TASK-083 — reason CODES, not English prose ──────────────────────────────────────────────────────
 describe("🔴 unattributed.reasons — the API supplies identity, the FE supplies language", () => {
   const mixed = [
-    sale("course-6", "c1", 5000), // → ว่ายน้ำ
+    sale("course-onewheel-6", "c1", 5000), // → ว่ายน้ำ
     sale("voucher-10", "v1", 9000), // → VOUCHER
     sale("voucher-10", "gone", 1500), // → UNRESOLVED_REF (voucher whose ref died)
-    sale("course-6", "gone", 2500), // → UNRESOLVED_REF
+    sale("course-onewheel-6", "gone", 2500), // → UNRESOLVED_REF
     sale("membership-1", "x", 700), // → UNKNOWN_CODE
   ];
   const r = () => groupBySubject(attributeSales(mixed, sources), "2026-07", names);
@@ -244,7 +252,7 @@ describe("🔴 unattributed.reasons — the API supplies identity, the FE suppli
 
   test("both identities still hold with nothing unattributable, and with no sales at all", () => {
     for (const x of [
-      groupBySubject(attributeSales([sale("course-6", "c1", 5000)], sources), "2026-07", names),
+      groupBySubject(attributeSales([sale("course-onewheel-6", "c1", 5000)], sources), "2026-07", names),
       groupBySubject([], "2026-07", names),
     ]) {
       expect(x.buckets.reduce((s, b) => s + b.amountMinor, 0) + x.unattributed.totalMinor).toBe(x.totalMinor);
@@ -268,5 +276,75 @@ describe("🔴 unattributed.reasons — the API supplies identity, the FE suppli
     for (const row of x.unattributed.reasons) {
       expect(x.unattributedReason).toContain(String(row.count));
     }
+  });
+});
+
+// ── TASK-159 (REQ-063) — discounts in the revenue report ────────────────────────────────────────────────────
+// A discount is a NEGATIVE movement on the sale's OWN item with the sale's refId, so it needs no attribution
+// rule of its own — it lands on the same sport, and the bucket is already net. What is new is only the display
+// split, and the identity that must survive it.
+describe("discount movements (TASK-159)", () => {
+  const discounted = (code: string, ref: string, minor: number) => ({
+    ...sale(code, ref, minor),
+    movementReason: "DISCOUNT",
+  });
+
+  test("🔑 a DISCOUNT attributes to the SAME sport as its sale — no special case", () => {
+    const [d] = attributeSales([discounted("course-onewheel-6", "c1", -50000)], sources);
+    expect(d).toMatchObject({ kind: "COURSE", studentId: STU_A, subjectId: SWIM });
+    expect(d.amountMinor).toBe(-50000);
+    expect(d.reason).toBeUndefined(); // it is attributed, not a fault
+  });
+
+  test("the sport's bucket is NET — the discount reduces its own sport, not a separate line", () => {
+    const r = groupBySubject(
+      attributeSales([sale("course-onewheel-6", "c1", 790000), discounted("course-onewheel-6", "c1", -50000)], sources),
+      "2026-07",
+      names,
+    );
+    expect(r.buckets).toHaveLength(1);
+    expect(r.buckets[0]!.amountMinor).toBe(740000);
+  });
+
+  test("gross · discountTotal · net are exposed, and gross + discount === net", () => {
+    const r = groupBySubject(
+      attributeSales(
+        [
+          sale("course-onewheel-6", "c1", 790000),
+          discounted("course-onewheel-6", "c1", -50000),
+          sale("first-trial", "b1", 139000), // undiscounted, different sport
+        ],
+        sources,
+      ),
+      "2026-07",
+      names,
+    );
+    expect(r.grossMinor).toBe(929000);
+    expect(r.discountTotalMinor).toBe(-50000);
+    expect(r.totalMinor).toBe(879000); // net
+    expect(r.grossMinor + r.discountTotalMinor).toBe(r.totalMinor);
+  });
+
+  test("🔴 the identity still holds ON THE NET — buckets + unattributed === total", () => {
+    const r = groupBySubject(
+      attributeSales(
+        [
+          sale("course-onewheel-6", "c1", 790000),
+          discounted("course-onewheel-6", "c1", -50000),
+          sale("voucher-10", "v1", 900000), // attributed to a customer, not a sport
+        ],
+        sources,
+      ),
+      "2026-07",
+      names,
+    );
+    const buckets = r.buckets.reduce((s, b) => s + b.amountMinor, 0);
+    expect(buckets + r.unattributed.totalMinor).toBe(r.totalMinor);
+  });
+
+  test("a month with no discounts reports 0 and gross === net — nothing changes for existing data", () => {
+    const r = groupBySubject(attributeSales([sale("course-onewheel-6", "c1", 790000)], sources), "2026-07", names);
+    expect(r.discountTotalMinor).toBe(0);
+    expect(r.grossMinor).toBe(r.totalMinor);
   });
 });

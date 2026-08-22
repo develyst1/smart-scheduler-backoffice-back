@@ -88,4 +88,13 @@ export const BO_WITNESSES: Witness[] = [
       "The partial unique index exists only because this migration ran.",
     rerunnable: true,
   },
+  {
+    tag: "0006_bo_movement_audit",
+    probe: { kind: "column", table: "movement", column: "note", schema: "bo" },
+    why:
+      "0006 adds `actor` then `note` to bo.movement, in that order — witnessing the LAST of the two means a " +
+      "half-applied run cannot read as finished. There is nothing else to probe: both statements are plain " +
+      "additive columns, with no index or constraint to stand for them.",
+    rerunnable: true,
+  },
 ];

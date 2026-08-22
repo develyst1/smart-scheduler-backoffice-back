@@ -29,6 +29,10 @@ export interface SaleMovement {
   productCode: string | null;
   valueMinor: number;
   createdAt: Date;
+  /** TASK-159 (REQ-063): `"DISCOUNT"` marks a negative movement posted against its sale's OWN item + refId.
+   *  It therefore attributes to the same sport by construction — it is not a special case in attribution, only
+   *  in the gross/discount/net display split. Absent on every pre-REQ-063 row. */
+  movementReason?: string | null;
 }
 
 /** What `refId` resolves to, loaded from `public` by the service. */
@@ -49,6 +53,8 @@ export interface AttributedSale {
   subjectId: string | null;
   /** Set only when `subjectId` is null. */
   reason?: UnattributedReason;
+  /** Carried through so the report can split gross vs discount without re-reading the movements. */
+  movementReason?: string | null;
 }
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -83,9 +89,15 @@ export function bangkokMonthRangeUtc(month: string): { start: Date; end: Date } 
  *  allowed to look like an ordinary voucher. */
 export function productKind(code: string | null): ProductKind | null {
   if (!code) return null;
-  if (/^course-\d+$/.test(code)) return "COURSE";
+  // 🔴 TASK-159 (REQ-063): this used to test `/^course-\d+$/`, which has not matched a real code since
+  // TASK-077 made courses program-priced — they are `course-{group}-{size}` (`course-onewheel-6`). Every
+  // course sale therefore fell through to `null` and landed in **unattributed**, which is exactly the bucket
+  // nobody questions because it always has something in it. Same story for single sessions: the code became
+  // `session-{group}`, not the literal `single-session` still matched below (kept for pre-TASK-077 rows).
+  if (/^course-[a-z-]+-\d+$/.test(code)) return "COURSE";
   if (/^voucher-\d+$/.test(code)) return "VOUCHER";
-  if (code === "first-trial" || code === "single-session") return "BOOKING";
+  if (/^session-[a-z-]+$/.test(code)) return "BOOKING";
+  if (code === "first-trial" || code === "single-session") return "BOOKING"; // legacy codes, still on old rows
   return null;
 }
 
@@ -99,7 +111,14 @@ export function attributeSales(
 ): AttributedSale[] {
   return sales.map((s): AttributedSale => {
     const kind = productKind(s.productCode);
-    const base = { productCode: s.productCode, kind, amountMinor: s.valueMinor };
+    // `movementReason` is spread in only when present, so every pre-REQ-063 attributed sale keeps exactly the
+    // shape it had — no test or consumer sees a new `undefined` field appear.
+    const base = {
+      productCode: s.productCode,
+      kind,
+      amountMinor: s.valueMinor,
+      ...(s.movementReason ? { movementReason: s.movementReason } : {}),
+    };
 
     if (kind === null) {
       // A code we don't know how to follow. It must NOT quietly look like a voucher.
@@ -154,6 +173,12 @@ export interface RevenueByActivity {
     totalMinor: number;
     reasons: UnattributedReasonRow[];
   };
+  /** TASK-159 (REQ-063) — the display split. `totalMinor` stays the NET number every existing consumer and
+   *  the `buckets + unattributed === total` identity already rely on; these two only explain how it was
+   *  reached. `grossMinor + discountTotalMinor === totalMinor`, and `discountTotalMinor` is ≤ 0. */
+  grossMinor: number;
+  /** Σ of the DISCOUNT movements — negative (or 0 when nothing was discounted). */
+  discountTotalMinor: number;
   /** @deprecated TASK-083 — same number as `unattributed.totalMinor`; kept so TASK-065 doesn't break
    *  mid-build. Derived, never computed separately. */
   unattributedMinor: number;
@@ -186,9 +211,14 @@ export function groupBySubject(
   const tally = new Map<UnattributedReason, { count: number; amountMinor: number }>();
   let unattributedMinor = 0;
   let totalMinor = 0;
+  let discountTotalMinor = 0;
 
   for (const a of attributed) {
     totalMinor += a.amountMinor;
+    // TASK-159: a DISCOUNT movement sits on its sale's own item + refId, so it has ALREADY reduced that
+    // sport's bucket in the same pass — this only records how much of the net came from discounting. It is
+    // never a bucket of its own, which is what keeps `buckets + unattributed === total` true on the net.
+    if (a.movementReason === "DISCOUNT") discountTotalMinor += a.amountMinor;
     if (a.subjectId) {
       byId.set(a.subjectId, (byId.get(a.subjectId) ?? 0) + a.amountMinor);
     } else {
@@ -214,6 +244,8 @@ export function groupBySubject(
     buckets: [...byId.entries()]
       .map(([subjectId, amountMinor]) => ({ subjectId, name: subjectName(subjectId), amountMinor }))
       .sort((a, b) => b.amountMinor - a.amountMinor),
+    grossMinor: totalMinor - discountTotalMinor, // discountTotal is negative ⇒ gross is the pre-discount figure
+    discountTotalMinor,
     unattributed: { totalMinor: unattributedMinor, reasons },
     unattributedMinor, // deprecated mirror
     unattributedReason: describeUnattributed(reasons), // deprecated, DERIVED from the codes
