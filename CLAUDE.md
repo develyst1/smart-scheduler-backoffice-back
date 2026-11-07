@@ -10,8 +10,8 @@ tutoring-specific names. Powers `smart-scheduler-backoffice-front` and any upstr
 
 > Spec: **[docs/requirement.md](docs/requirement.md)**. **Tasks/scope live in the
 > `smart-scheduler-requirement` repo, not a `todo.md`** (todo files were removed 2026-07-08 — do not
-> recreate them): open `smart-scheduler-requirement/requirement.html` and treat `Partial` / `Planned`
-> items as the work queue. See root `../CLAUDE.md` §"How work is assigned".
+> recreate them): scope is `smart-scheduler-requirement/01-master-plan/` + `02-requirements/`
+> (the July `requirement.html` is archived in `_archive/2026-07-hub/`). See root `../CLAUDE.md` §"How work is assigned".
 
 ## Stack
 
