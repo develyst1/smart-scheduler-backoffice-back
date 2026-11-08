@@ -97,4 +97,53 @@ export const BO_WITNESSES: Witness[] = [
       "additive columns, with no index or constraint to stand for them.",
     rerunnable: true,
   },
+  {
+    tag: "0007_bo_users_roles",
+    probe: { kind: "index", index: "bo_users_username_uq", schema: "bo" },
+    why:
+      "0007 creates the bo.role enum, then bo.users, then this unique index LAST — so the index existing proves " +
+      "the enum and the table landed before it (TASK-856 / SPEC-097). Nothing else creates it.",
+    rerunnable: true, // enum in a DO block, table + index IF NOT EXISTS
+  },
+  {
+    tag: "0008_bo_revenue_ledger",
+    probe: { kind: "index", index: "bo_revenue_line_day_idx", schema: "bo" },
+    why:
+      "0008 creates bo.revenue_category, bo.revenue_line, the FK, then the three indexes with this one LAST before the " +
+      "seed INSERT, so the index existing proves both tables landed (TASK-858 / SPEC-098). The 53-row seed is the " +
+      "final statement and has no probe.",
+    rerunnable: false, // plain CREATE TABLE: a re-run on a half-applied DB fails on 'already exists'
+  },
+  {
+    tag: "0009_bo_salary_thin_slip",
+    probe: { kind: "index", index: "bo_pay_slip_line_slip_idx", schema: "bo" },
+    why:
+      "0009 creates the 5 pay enums, the 4 tables (salary_profile, pay_period, pay_slip, pay_slip_line), the 2 FKs, then the " +
+      "indexes with this one LAST — so it existing proves every table landed (TASK-865 / SPEC-100). Nothing else creates it.",
+    rerunnable: true, // enums + FKs in DO blocks, tables + indexes IF NOT EXISTS
+  },
+  {
+    tag: "0010_bo_people_model_pay_period",
+    probe: { kind: "index", index: "bo_fl_rate_profile_class_uq", schema: "bo" },
+    why:
+      "0010 creates the 2 enums, adds the 3 profile + 2 period columns, creates bo.fl_rate and its FK, then this unique index LAST — " +
+      "so it existing proves the table and (running after the ALTERs) the columns landed (TASK-871 / SPEC-101). Nothing else creates it.",
+    rerunnable: true, // enums + FK in DO blocks, ADD COLUMN / table / index IF NOT EXISTS
+  },
+  {
+    tag: "0011_bo_pay_slip_line_source_ref",
+    probe: { kind: "index", index: "bo_pay_slip_line_auto_ref_uq", schema: "bo" },
+    why:
+      "0011 adds bo.pay_slip_line.source_ref and then the partial unique index on it LAST — so the index existing proves the column " +
+      "landed before it (TASK-867/878 auto-line idempotency). Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN / CREATE INDEX IF NOT EXISTS
+  },
+  {
+    tag: "0012_bo_payment",
+    probe: { kind: "index", index: "bo_payment_ref_n_uq", schema: "bo" },
+    why:
+      "0012 creates bo.payment (its four CHECKs inside the CREATE TABLE) and then the unique index on (ref_type, ref_id, n) LAST — so " +
+      "the index existing proves the table landed before it (TASK-874 / SPEC-099 §8). Nothing else creates it.",
+    rerunnable: false, // plain CREATE TABLE: a re-run on a half-applied DB fails on 'already exists'
+  },
 ];

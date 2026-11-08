@@ -50,6 +50,48 @@
       "when": 1785628800000,
       "tag": "0006_bo_movement_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794075519530,
+      "tag": "0007_bo_users_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794076629348,
+      "tag": "0008_bo_revenue_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794079697238,
+      "tag": "0009_bo_salary_thin_slip",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794146072037,
+      "tag": "0010_bo_people_model_pay_period",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794146584908,
+      "tag": "0011_bo_pay_slip_line_source_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794147207607,
+      "tag": "0012_bo_payment",
+      "breakpoints": true
     }
   ]
 }

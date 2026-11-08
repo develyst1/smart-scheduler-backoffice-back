@@ -1,8 +1,8 @@
 import type { Context, Next } from "hono";
-import { unauthorized } from "../lib/http";
-import { verifyToken, type AuthClaims } from "../lib/jwt";
+import { forbidden, unauthorized } from "../lib/http";
+import { verifyToken, type AuthClaims, type Role } from "../lib/jwt";
 
-// Make c.get("user") / c.set("user", …) type-safe everywhere.
+// Make c.get("user") / c.set("user", …) / c.var.user type-safe everywhere.
 declare module "hono" {
   interface ContextVariableMap {
     user: AuthClaims;
@@ -22,33 +22,75 @@ export async function serviceAuth(c: Context, next: Next) {
   await next();
 }
 
-/** Admin JWT gate (SPEC-003). `SKIP_ADMIN_AUTH=true` (dev) bypasses. Otherwise a valid Bearer
- *  login token is required — missing/invalid/expired → 401. Claims attach to `c.get("user")`. */
-export async function adminAuth(c: Context, next: Next) {
-  if (process.env.SKIP_ADMIN_AUTH === "true") {
-    await next();
-    return;
-  }
+const skipAuth = () => process.env.SKIP_ADMIN_AUTH === "true";
+const bearerOf = (c: Context): string => {
   const header = c.req.header("Authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!token) throw unauthorized("ต้อง login admin");
+  return header?.startsWith("Bearer ") ? header.slice(7).trim() : "";
+};
+
+/** What a request is when `SKIP_ADMIN_AUTH=true` and carries no usable token (dev only): the most permissive role, so a
+ *  developer can reach every gate. A valid Bearer still WINS, so role behaviour can be exercised in dev. */
+const DEV_USER: AuthClaims = { sub: "dev", role: "ceo", teacherId: null };
+
+/** Sets `c.var.user` from the request, or throws 401. The one place a token becomes a user. */
+async function authenticate(c: Context): Promise<AuthClaims> {
+  const token = bearerOf(c);
+  if (skipAuth()) {
+    let user: AuthClaims = DEV_USER;
+    if (token) {
+      try {
+        user = await verifyToken(token);
+      } catch {
+        /* dev bypass: an unusable token is the dev user, as the old single-admin gate let it through */
+      }
+    }
+    c.set("user", user);
+    return user;
+  }
+  if (!token) throw unauthorized("ต้อง login");
   try {
-    c.set("user", await verifyToken(token));
+    const user = await verifyToken(token);
+    c.set("user", user);
+    return user;
   } catch {
     throw unauthorized("โทเคนไม่ถูกต้องหรือหมดอายุ");
   }
+}
+
+/** SPEC-097 §4 — any signed-in user (ceo / admin / coach). Sets `c.var.user = {sub, role, teacherId}`. 401 otherwise. */
+export async function requireAuth(c: Context, next: Next) {
+  await authenticate(c);
   await next();
 }
 
-/** Endpoints that BOTH a human admin (backoffice FE) and a machine (scheduling) may call —
- *  e.g. stock movements & sales. Passes if a valid service token OR a valid admin JWT is present. */
+/**
+ * SPEC-097 §4 — signed in AND one of `roles`, else 403 `FORBIDDEN`. The middleware gates the ROUTE; hiding a FIELD
+ * from an admin (R0.2) is the handler's job. Revenue (Team C) uses `requireRole("ceo")`.
+ */
+export function requireRole(...roles: Role[]) {
+  return async function requireRole(c: Context, next: Next) {
+    const user = await authenticate(c);
+    if (!roles.includes(user.role)) throw forbidden();
+    await next();
+  };
+}
+
+/** The staff gate the existing routes already use (kept under its name — `bo.test.ts` walks the route table for it):
+ *  signed in as a ceo or an admin. A coach is 403 (they see only their own slip, never the item / stock surface). */
+export async function adminAuth(c: Context, next: Next) {
+  const user = await authenticate(c);
+  if (user.role !== "ceo" && user.role !== "admin") throw forbidden();
+  await next();
+}
+
+/** Endpoints that BOTH a human (ceo / admin, backoffice FE) and a machine (scheduling) may call —
+ *  e.g. stock movements & sales. Passes if a valid service token OR a valid ceo/admin JWT is present. */
 export async function adminOrService(c: Context, next: Next) {
-  if (process.env.SKIP_ADMIN_AUTH === "true") {
+  if (skipAuth()) {
     await next();
     return;
   }
-  const header = c.req.header("Authorization");
-  const bearer = header?.startsWith("Bearer ") ? header.slice(7).trim() : undefined;
+  const bearer = bearerOf(c) || undefined;
   const expected = process.env.SERVICE_TOKEN;
   const svcToken = c.req.header("X-Service-Token") ?? bearer;
   if (expected && svcToken === expected) {
@@ -56,13 +98,16 @@ export async function adminOrService(c: Context, next: Next) {
     return;
   }
   if (bearer) {
+    let user: AuthClaims;
     try {
-      c.set("user", await verifyToken(bearer)); // admin JWT
+      user = await verifyToken(bearer);
     } catch {
       throw unauthorized("โทเคนไม่ถูกต้องหรือหมดอายุ");
     }
+    if (user.role !== "ceo" && user.role !== "admin") throw forbidden();
+    c.set("user", user);
     await next();
     return;
   }
-  throw unauthorized("ต้อง login admin หรือใช้ service token");
+  throw unauthorized("ต้อง login หรือใช้ service token");
 }

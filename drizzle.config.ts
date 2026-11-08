@@ -1,7 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
-  schema: "./src/db/schema.ts",
+  // SPEC-098 §2: Team C's revenue ledger lives in its own file so TASK-856 can own `schema.ts` this week.
+  schema: ["./src/db/schema.ts", "./src/db/schema-revenue.ts"],
   out: "./drizzle",
   // 🔴 TASK-085 — this repo's OWN migration ledger. Both repos previously used the default
   // `drizzle.__drizzle_migrations`, and drizzle applies by comparing ONE row's created_at (never by

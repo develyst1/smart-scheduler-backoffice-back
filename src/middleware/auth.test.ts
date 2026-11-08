@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { adminAuth, adminOrService } from "./auth";
-import { authRoutes } from "../routes/auth";
+import { makeAuthRoutes } from "../routes/auth";
 import { signToken } from "../lib/jwt";
 import { ApiException } from "../lib/http";
 
@@ -30,7 +30,7 @@ function makeApp() {
       return c.json({ error: { code: err.code, message: err.message } }, err.status as 400);
     return c.json({ error: { code: "INTERNAL", message: "err" } }, 500);
   });
-  app.route("/auth", authRoutes);
+  app.route("/auth", makeAuthRoutes(async () => undefined)); // 🔻 TASK-856: login validates bo.users; no DB here ⇒ no user rows
   app.post("/guarded", adminOrService, (c) => c.json({ ok: true }));
   app.post("/admin-only", adminAuth, (c) => c.json({ ok: true }));
   return app;
@@ -44,12 +44,17 @@ const post = (app: Hono, path: string, body?: unknown, headers: Record<string, s
   });
 
 describe("POST /auth/login (TASK-013)", () => {
-  test("correct env creds → 200 with a token + user", async () => {
-    const res = await post(makeApp(), "/auth/login", { username: "admin", password: "admin" });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { token: string; user: { username: string; role: string } };
-    expect(typeof body.token).toBe("string");
-    expect(body.user).toEqual({ username: "admin", role: "admin" });
+  test("correct env creds → 200 with a token + user (🔻 TASK-856: the env stub works ONLY under SKIP_ADMIN_AUTH)", async () => {
+    process.env.SKIP_ADMIN_AUTH = "true";
+    try {
+      const res = await post(makeApp(), "/auth/login", { username: "admin", password: "admin" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { token: string; user: { username: string; role: string; teacherId: null } };
+      expect(typeof body.token).toBe("string");
+      expect(body.user).toEqual({ username: "admin", role: "admin", teacherId: null });
+    } finally {
+      process.env.SKIP_ADMIN_AUTH = "false";
+    }
   });
 
   test("wrong password → 401", async () => {

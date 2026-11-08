@@ -1,0 +1,93 @@
+CREATE TABLE "bo"."revenue_category" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"type" text NOT NULL,
+	"name" text NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "revenue_category_type_ck" CHECK ("type" IN ('COURSE','TRIAL','VOUCHER','ECA','SALES','FNB','RENT','OTHER'))
+);
+--> statement-breakpoint
+CREATE TABLE "bo"."revenue_line" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"occurred_on" date NOT NULL,
+	"branch" text NOT NULL,
+	"type" text NOT NULL,
+	"category_id" uuid,
+	"product_name" text NOT NULL,
+	"amount_minor" integer NOT NULL,
+	"method" text NOT NULL,
+	"remark" text,
+	"source" text NOT NULL,
+	"ref_type" text,
+	"ref_id" text,
+	"idempotency_key" text,
+	"actor" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "revenue_line_branch_ck" CHECK ("branch" IN ('BRAVO','OTHER')),
+	CONSTRAINT "revenue_line_method_ck" CHECK ("method" IN ('TRANSFER','CASH','CARD')),
+	CONSTRAINT "revenue_line_type_ck" CHECK ("type" IN ('COURSE','TRIAL','VOUCHER','ECA','SALES','FNB','RENT','OTHER','REFUND')),
+	CONSTRAINT "revenue_line_sign_ck" CHECK (("type" = 'REFUND' AND "amount_minor" < 0) OR ("type" <> 'REFUND' AND "amount_minor" > 0))
+);
+--> statement-breakpoint
+ALTER TABLE "bo"."revenue_line" ADD CONSTRAINT "revenue_line_category_id_revenue_category_id_fk" FOREIGN KEY ("category_id") REFERENCES "bo"."revenue_category"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_revenue_category_type_name_uq" ON "bo"."revenue_category" USING btree ("type",lower("name"));--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_revenue_line_idempotency_uq" ON "bo"."revenue_line" USING btree ("idempotency_key");--> statement-breakpoint
+CREATE INDEX "bo_revenue_line_day_idx" ON "bo"."revenue_line" USING btree ("occurred_on","type");
+
+--> statement-breakpoint
+INSERT INTO "bo"."revenue_category" ("type","name","sort_order") VALUES
+	('COURSE', 'Inline Skate · Private', 0),
+	('COURSE', 'Inline Skate · Duo', 1),
+	('COURSE', 'Inline Skate · 1 HR', 2),
+	('COURSE', 'Surfskate · Private', 3),
+	('COURSE', 'Surfskate · Duo', 4),
+	('COURSE', 'Surfskate · 1 HR', 5),
+	('COURSE', 'Skateboard · Private', 6),
+	('COURSE', 'Skateboard · Duo', 7),
+	('COURSE', 'Skateboard · 1 HR', 8),
+	('COURSE', 'Bike · Private', 9),
+	('COURSE', 'Bike · Duo', 10),
+	('COURSE', 'Bike · 1 HR', 11),
+	('COURSE', 'Balance Play · Private', 12),
+	('COURSE', 'Balance Play · Duo', 13),
+	('COURSE', 'Balance Play · 1 HR', 14),
+	('COURSE', 'Onewheel · Private', 15),
+	('COURSE', 'Onewheel · Duo', 16),
+	('COURSE', 'Onewheel · 1 HR', 17),
+	('COURSE', 'Freeskate · Private', 18),
+	('COURSE', 'Freeskate · Duo', 19),
+	('COURSE', 'Freeskate · 1 HR', 20),
+	('COURSE', 'Scooter · Private', 21),
+	('COURSE', 'Scooter · Duo', 22),
+	('COURSE', 'Scooter · 1 HR', 23),
+	('COURSE', 'Balance Camp', 24),
+	('COURSE', 'Birthday', 25),
+	('TRIAL', '1st Trial (Inline Skate)', 0),
+	('TRIAL', '1st Trial (Surfskate)', 1),
+	('TRIAL', '1st Trial (Skateboard)', 2),
+	('TRIAL', '1st Trial (Bike)', 3),
+	('TRIAL', '1st Trial (Balance Play)', 4),
+	('TRIAL', '1st Trial (Onewheel)', 5),
+	('TRIAL', '1st Trial (Freeskate)', 6),
+	('TRIAL', '1st Trial (Scooter)', 7),
+	('VOUCHER', '5 Hr', 0),
+	('VOUCHER', '10 Hr', 1),
+	('VOUCHER', '15 Hr', 2),
+	('ECA', 'STA', 0),
+	('ECA', 'RIS', 1),
+	('ECA', 'ABC', 2),
+	('ECA', 'ISB', 3),
+	('ECA', 'KIS', 4),
+	('SALES', 'Miller', 0),
+	('SALES', 'Inline Skate', 1),
+	('SALES', 'Bike', 2),
+	('SALES', 'Safety', 3),
+	('FNB', 'Drink', 0),
+	('FNB', 'Snack', 1),
+	('RENT', 'EQUIPMENT', 0),
+	('RENT', 'PARK', 1),
+	('OTHER', 'Shirt', 0),
+	('OTHER', 'Sock', 1),
+	('OTHER', 'Bag', 2)
+ON CONFLICT DO NOTHING;

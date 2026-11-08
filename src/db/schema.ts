@@ -26,6 +26,7 @@ import {
   index,
   check,
   primaryKey,
+  numeric,
 } from "drizzle-orm/pg-core";
 
 export const ops = pgSchema("ops");
@@ -587,6 +588,182 @@ export const boItemTagRelations = relations(boItemTag, ({ one }) => ({
   item: one(boItem, { fields: [boItemTag.itemId], references: [boItem.id] }),
   value: one(boTagValue, { fields: [boItemTag.tagValueId], references: [boTagValue.id] }),
 }));
+
+// ── R0.1 users + roles (SPEC-097 / TASK-856 / REQ-120) ──────────────────────────────────────────────────────────
+// The back office's OWN sign-in table. `ops.accounts` / `bo.*` money tables are NOT users. Roles are exactly these
+// three, lower-case, and match `final-ui`'s `Role` (carry-over contract for all three teams).
+export const boRole = bo.enum("role", ["ceo", "admin", "coach"]);
+
+export const boUsers = bo.table(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Trimmed + lower-cased on write; the login key and the token `sub`. */
+    username: text("username").notNull(),
+    /** `Bun.password` argon2id (the same primitive the front office uses). Never in any response. */
+    passwordHash: text("password_hash").notNull(),
+    role: boRole("role").notNull(),
+    /**
+     * The scheduling teacher this coach IS (scopes "own slip"). A plain uuid on purpose — NO FK to `public.teachers`:
+     * `public` is owned and migrated by smart-scheduler-back (same ownership rule as `bo.item.owner_ref`), and a
+     * cross-owner FK would let this table block a teacher delete over there. NULL for ceo / admin.
+     */
+    teacherId: uuid("teacher_id"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("bo_users_username_uq").on(t.username)],
+);
+
+// ── Thin-slip pay-run + slip engine (SPEC-100 / TASK-865) ───────────────────────────────────────────────────────
+// A pay period is one calendar month; a slip is one coach in one period; a slip's total is `base_amount + Σ lines`
+// and is NEVER stored (computed on read). Every later pay line (Extra Hour, OT, Merit, Bonus, Commission, FL pay,
+// Transportation) is another `pay_line_kind` on the same model. `teacher_id` is a plain uuid with NO cross-schema FK
+// (`public.teachers` belongs to smart-scheduler-back — the SPEC-097 house pattern). Money columns are `numeric(14,2)` baht;
+// the code computes in integer satang and never in float.
+export const boEmploymentType = bo.enum("employment_type", ["FT", "PT", "FL", "STAFF"]);
+export const boPayPeriodStatus = bo.enum("pay_period_status", ["open", "locked"]);
+export const boPaySlipStatus = bo.enum("pay_slip_status", ["draft", "confirmed", "locked"]);
+export const boPayLineKind = bo.enum("pay_line_kind", [
+  "base",
+  "other",
+  "extra_hour",
+  "ot",
+  "merit",
+  "bonus",
+  "commission",
+  "fl_pay",
+  "transport",
+]);
+export const boPayLineSource = bo.enum("pay_line_source", ["manual", "auto"]);
+// TASK-871 / SPEC-101 §4 — the class-type dimension shared by the FL rates (here) and the hours reader (link 2), and the vehicle.
+export const boPayClassType = bo.enum("pay_class_type", ["private", "duo", "group", "eca", "camp"]);
+export const boVehicle = bo.enum("vehicle", ["car", "motorbike"]);
+
+/** One row per coach. Base is CEO-only data; null ⇒ 0 on a slip. */
+export const boSalaryProfile = bo.table(
+  "salary_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teacherId: uuid("teacher_id").notNull(),
+    employmentType: boEmploymentType("employment_type").notNull().default("FT"),
+    /** R1.1 — the set of roles held; EMPTY ⇒ just `employment_type`. The only multi-role combination is PT + FL (FL Mon–Fri, PT Sat–Sun: `lib/role-of-day.ts`). */
+    roles: boEmploymentType("roles").array().notNull().default(sql`'{}'`),
+    baseSalary: numeric("base_salary", { precision: 14, scale: 2 }),
+    /** R1.2 — eligible for a Merit line (the amount itself is typed; no auto compute). */
+    meritEligible: boolean("merit_eligible").notNull().default(false),
+    /** R1.2 — for Team B's Transportation (defined here so the people model is whole). */
+    vehicle: boVehicle("vehicle"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("bo_salary_profile_teacher_uq").on(t.teacherId)],
+);
+
+/** R1.2 — a freelance hourly RATE per person AND per class type (satang per hour, as numeric baht). One row per (profile, class type). */
+export const boFlRate = bo.table(
+  "fl_rate",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => boSalaryProfile.id, { onDelete: "cascade" }),
+    classType: boPayClassType("class_type").notNull(),
+    rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("bo_fl_rate_profile_class_uq").on(t.profileId, t.classType)],
+);
+
+export const boPayPeriod = bo.table(
+  "pay_period",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    year: integer("year").notNull(),
+    month: integer("month").notNull(),
+    /** R1.4 — the period runs period_start..period_end INCLUSIVE ("30/9–30/10"): `lib/pay-period.ts`. `year`/`month` stay the human label. NULL on rows made before TASK-871. */
+    periodStart: date("period_start", { mode: "string" }),
+    periodEnd: date("period_end", { mode: "string" }),
+    status: boPayPeriodStatus("status").notNull().default("open"),
+    /** The auto-lock instant; default = 12:00 Asia/Bangkok on the last day of (year, month) (REQ-120 R1.5). */
+    lockAt: timestamp("lock_at", { withTimezone: true }).notNull(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("bo_pay_period_ym_uq").on(t.year, t.month),
+    check("bo_pay_period_month_chk", sql`${t.month} between 1 and 12`),
+  ],
+);
+
+export const boPaySlip = bo.table(
+  "pay_slip",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => boPayPeriod.id),
+    teacherId: uuid("teacher_id").notNull(),
+    /** Snapshot of `salary_profile.base_salary` at run time. */
+    baseAmount: numeric("base_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+    status: boPaySlipStatus("status").notNull().default("draft"),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("bo_pay_slip_period_teacher_uq").on(t.periodId, t.teacherId)],
+);
+
+export const boPaySlipLine = bo.table(
+  "pay_slip_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slipId: uuid("slip_id")
+      .notNull()
+      .references(() => boPaySlip.id, { onDelete: "cascade" }),
+    kind: boPayLineKind("kind").notNull(),
+    /** For `other`: the REQUIRED reason (REQ-120 R1.4). */
+    label: text("label").notNull(),
+    /** SIGNED — an Other ± line may be negative. */
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    source: boPayLineSource("source").notNull().default("manual"),
+    /**
+     * TASK-867/878 — what an AUTO line was derived from (e.g. a date, an ECA/bonus key), so a re-run upserts instead of duplicating.
+     * Nullable: a manual line has none. The partial unique index below makes (slip, kind, source_ref) unique among `source = 'auto'` lines.
+     */
+    sourceRef: text("source_ref"),
+    /** The CEO username from the token. */
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("bo_pay_slip_line_slip_idx").on(t.slipId),
+    uniqueIndex("bo_pay_slip_line_auto_ref_uq").on(t.slipId, t.kind, t.sourceRef).where(sql`${t.source} = 'auto'`),
+  ],
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // READ-ONLY declarations of the scheduling app's `public` tables (SPEC-021 / TASK-064).
