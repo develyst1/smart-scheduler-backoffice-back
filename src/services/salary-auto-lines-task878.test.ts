@@ -181,6 +181,23 @@ describe("idempotency (migration 0011's source_ref key)", () => {
   });
 });
 
+describe("insertLine keeps sourceRef and a duplicate AUTO line is a no-op (Sober's defect)", () => {
+  test("round-trips sourceRef; the same (slip, kind, ref) auto line twice returns the first; manual lines are unconstrained", async () => {
+    const { store, svc, period } = await setup();
+    await svc.runPeriod(period.id);
+    const slipId = slipOf(store, FT).id;
+    const a = await store.insertLine({ slipId, kind: "bonus", label: "x", amountSatang: 100, source: "auto", createdBy: "t", sourceRef: "2026-10-02" });
+    expect(a.sourceRef).toBe("2026-10-02");
+    const b = await store.insertLine({ slipId, kind: "bonus", label: "y", amountSatang: 999, source: "auto", createdBy: "t", sourceRef: "2026-10-02" });
+    expect(b.id).toBe(a.id);
+    expect(linesOf(store, FT).filter((l) => l.kind === "bonus").length).toBe(1);
+    await store.insertLine({ slipId, kind: "other", label: "m", amountSatang: 1, source: "manual", createdBy: "t" });
+    await store.insertLine({ slipId, kind: "other", label: "m", amountSatang: 1, source: "manual", createdBy: "t" });
+    expect(linesOf(store, FT).filter((l) => l.kind === "other").length).toBe(2);
+    await expect(store.insertLine({ slipId, kind: "bonus", label: "z", amountSatang: 1, source: "auto", createdBy: "t" })).rejects.toThrow();
+  });
+});
+
 describe("OT (admin-entered) and Merit (typed)", () => {
   test("OT: 2 Hr on a 25,000 ฿ base = 276.44 ฿, itemised, manual-source", async () => {
     const { store, svc, period } = await setup();

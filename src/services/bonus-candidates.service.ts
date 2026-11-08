@@ -11,7 +11,7 @@
 // 🔑 The query builders are exported on their own so a test can render their SQL (`.toSQL()`, no connection) and prove the
 // month window and `source = 'SALE'` without a database.
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { sbBookings, sbCourses, sbStudents, sbSubjects, sbVouchers } from "../db/schema-salary-b-read";
+import { sbBookings, sbCourses, sbStudents, sbSubjects, sbTeachers, sbVouchers } from "../db/schema-salary-b-read";
 import { badRequest } from "../lib/http";
 import {
   bonus100Candidates,
@@ -104,6 +104,11 @@ export function firstAttendedByVoucherQuery(d: any, voucherIds: readonly string[
     .groupBy(sbBookings.voucherId);
 }
 
+/** Which of these coaches are the system teacher ("No Teacher", `is_system`). Never a bonus coach (TASK-861's relayed rule). */
+export function systemTeachersQuery(d: any, coachIds: readonly string[]) {
+  return d.select({ id: sbTeachers.id }).from(sbTeachers).where(and(eq(sbTeachers.isSystem, true), inArray(sbTeachers.id, [...coachIds])));
+}
+
 const uniq = (xs: readonly (string | null | undefined)[]): string[] => [...new Set(xs.filter((x): x is string => !!x))];
 
 // ───────────────────────────────── the one DB read ─────────────────────────────────
@@ -148,24 +153,33 @@ export async function loadPurchaseRowsFrom(d: any, month: string): Promise<Purch
   const subjectIds = uniq(trials.map((t: any) => t.subjectId));
   const subjects: { id: string; name: string }[] = subjectIds.length ? await d.select({ id: sbSubjects.id, name: sbSubjects.name }).from(sbSubjects).where(inArray(sbSubjects.id, subjectIds)) : [];
 
+  // every coach the rules could name: the trial's, and the old entitlements' first / latest. Which are the system teacher?
+  const coachIds = uniq([
+    ...trials.map((t: any) => t.teacherId),
+    ...prevCourses.flatMap((c: any) => [c.firstTeacherId, c.latestTeacherId]),
+    ...prevVouchers.map((v: any) => v.firstTeacherId),
+  ]);
+  const systemIds = new Set<string>(coachIds.length ? (await systemTeachersQuery(d, coachIds)).map((r: any) => r.id) : []);
+  const isSystem = (id: string | null | undefined): boolean => !!id && systemIds.has(id);
+
   const studentBy = new Map<string, any>(students.map((s: any) => [s.id, s]));
   const subjectBy = new Map<string, string>(subjects.map((s) => [s.id, s.name]));
   const trialBy = new Map<string, TrialRef>(
-    trials.map((t: any) => [t.id, { bookingId: t.id, date: t.date, subject: t.subjectId ? (subjectBy.get(t.subjectId) ?? null) : null, coachId: t.teacherId }]),
+    trials.map((t: any) => [t.id, { bookingId: t.id, date: t.date, subject: t.subjectId ? (subjectBy.get(t.subjectId) ?? null) : null, coachId: t.teacherId, coachIsSystem: isSystem(t.teacherId) }]),
   );
   const courseFirstBy = new Map<string, string>(courseFirst.map((r: any) => [r.id, r.first]));
   const voucherFirstBy = new Map<string, string>(voucherFirst.map((r: any) => [r.id, r.first]));
   const prevCourseBy = new Map<string, PrevRef>(
     prevCourses.map((c: any) => [
       c.id,
-      { kind: "COURSE", id: c.id, createdAt: c.createdAt, firstTeacherId: c.firstTeacherId, latestTeacherId: c.latestTeacherId, coachChangedAt: c.coachChangedAt, bonus100Pick: c.bonus100Pick, firstAttendedDate: courseFirstBy.get(c.id) ?? null },
+      { kind: "COURSE", id: c.id, createdAt: c.createdAt, firstTeacherId: c.firstTeacherId, latestTeacherId: c.latestTeacherId, coachChangedAt: c.coachChangedAt, bonus100Pick: c.bonus100Pick, firstAttendedDate: courseFirstBy.get(c.id) ?? null, firstTeacherIsSystem: isSystem(c.firstTeacherId), latestTeacherIsSystem: isSystem(c.latestTeacherId) },
     ]),
   );
   const prevVoucherBy = new Map<string, PrevRef>(
     prevVouchers.map((v: any) => [
       v.id,
       // a voucher has no coach-change / pick columns: it always reads as "no change"
-      { kind: "VOUCHER", id: v.id, createdAt: v.createdAt, firstTeacherId: v.firstTeacherId, latestTeacherId: null, coachChangedAt: null, bonus100Pick: null, firstAttendedDate: voucherFirstBy.get(v.id) ?? null },
+      { kind: "VOUCHER", id: v.id, createdAt: v.createdAt, firstTeacherId: v.firstTeacherId, latestTeacherId: null, coachChangedAt: null, bonus100Pick: null, firstAttendedDate: voucherFirstBy.get(v.id) ?? null, firstTeacherIsSystem: isSystem(v.firstTeacherId), latestTeacherIsSystem: false },
     ]),
   );
 

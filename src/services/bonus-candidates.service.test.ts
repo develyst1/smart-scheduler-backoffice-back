@@ -3,13 +3,14 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { ApiException } from "../lib/http";
 import { DEFAULT_RULES, monthWindow, type PurchaseRow } from "../lib/bonus-rules";
-import { sbBookings, sbCourses, sbStudents, sbSubjects, sbVouchers } from "../db/schema-salary-b-read";
+import { sbBookings, sbCourses, sbStudents, sbSubjects, sbTeachers, sbVouchers } from "../db/schema-salary-b-read";
 import {
   coursesInMonthQuery,
   firstAttendedByCourseQuery,
   firstAttendedByVoucherQuery,
   listBonusCandidates,
   loadPurchaseRowsFrom,
+  systemTeachersQuery,
   vouchersInMonthQuery,
 } from "./bonus-candidates.service";
 
@@ -72,6 +73,16 @@ describe("the first-ATTENDED-date queries (rendered SQL, no connection)", () => 
   test("only ATTENDED counts as the first session: a cancelled or pending one never sets the date", () => {
     expect(fc.params).not.toContain("CONFIRMED");
     expect(fc.params).not.toContain("PENDING");
+  });
+});
+
+describe("the system-teacher query (rendered SQL, no connection)", () => {
+  const q = systemTeachersQuery(d, ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]).toSQL();
+  test("only teachers with is_system = true, among the given coach ids", () => {
+    expect(q.sql).toContain('from "teachers"');
+    expect(q.sql).toContain('"teachers"."is_system" = $1');
+    expect(q.sql).toContain('"teachers"."id" in ($2, $3)');
+    expect(q.params).toEqual([true, "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]);
   });
 });
 
@@ -198,6 +209,33 @@ describe("loadPurchaseRowsFrom — plain rows from the scheduling tables", () =>
     // v-renew is a voucher bought after a voucher: NEVER a renewal, even with A10 on (the assembled row says so, the rule refuses it)
     expect(b100["v-renew"]).toBeUndefined();
     expect(Object.keys(b100)).toEqual(["c-renew"]);
+  });
+  test("a coach the teachers table marks is_system is flagged on the trial and on the old course, and the rules drop the candidate", async () => {
+    const asSystem = (ids: string[]) => (q: Q): unknown[] => (q.table === sbTeachers ? ids.map((id) => ({ id })) : answers(q));
+    // the TRIAL's coach is the system teacher ⇒ no Bonus 50
+    const a = fakeDb(asSystem(["coach-trial"]));
+    const rowsA = await loadPurchaseRowsFrom(a.db, "2026-10");
+    expect(rowsA.find((r) => r.id === "c-trial")?.trial?.coachIsSystem).toBe(true);
+    expect((await listBonusCandidates("2026-10", DEFAULT_RULES, (m) => loadPurchaseRowsFrom(a.db, m))).bonus50).toEqual([]);
+    // the old course's FIRST coach is the system teacher ⇒ no Bonus 100 for that renewal
+    const b = fakeDb(asSystem(["coach-first"]));
+    const rowsB = await loadPurchaseRowsFrom(b.db, "2026-10");
+    expect(rowsB.find((r) => r.id === "c-renew")?.prev).toMatchObject({ firstTeacherIsSystem: true, latestTeacherIsSystem: false });
+    expect((await listBonusCandidates("2026-10", DEFAULT_RULES, (m) => loadPurchaseRowsFrom(b.db, m))).bonus100).toEqual([]);
+  });
+  test("with no system teacher among them, every flag is false and the answers are unchanged", async () => {
+    const { db } = fakeDb(answers); // the teachers query answers [] by default
+    const rows = await loadPurchaseRowsFrom(db, "2026-10");
+    expect(rows.find((r) => r.id === "c-trial")?.trial?.coachIsSystem).toBe(false);
+    expect(rows.find((r) => r.id === "c-renew")?.prev).toMatchObject({ firstTeacherIsSystem: false, latestTeacherIsSystem: false });
+    expect(rows.find((r) => r.id === "v-renew")?.prev).toMatchObject({ firstTeacherIsSystem: false, latestTeacherIsSystem: false });
+  });
+  test("the teachers lookup is skipped when there are no coaches to ask about", async () => {
+    const { db, seen } = fakeDb((q) =>
+      q.table === sbCourses && "coStudentId" in q.select ? [{ id: "c1", studentId: "s1", coStudentId: null, createdAt: new Date("2026-10-15T05:00:00Z"), fromTrialBookingId: null, prevCourseId: null, prevVoucherId: null }] : q.table === sbStudents ? [{ id: "s1", name: "A", nickname: null }] : [],
+    );
+    await loadPurchaseRowsFrom(db, "2026-10");
+    expect(seen.some((q) => q.table === sbTeachers)).toBe(false);
   });
   test("no sales in the month ⇒ [] and no further query is made", async () => {
     const { db, seen } = fakeDb(() => []);

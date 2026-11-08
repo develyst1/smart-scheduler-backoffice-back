@@ -124,10 +124,16 @@ export function makeDbSalaryStore(exec: typeof db = db): SalaryStore {
       return new Map(rows.map((r) => [r.slipId, satangFromNumeric(r.total)]));
     },
     async insertLine(l) {
-      const [r] = await exec
-        .insert(boPaySlipLine)
-        .values({ slipId: l.slipId, kind: l.kind, label: l.label, amount: numericFromSatang(l.amountSatang), source: l.source, createdBy: l.createdBy })
-        .returning();
+      const values = { slipId: l.slipId, kind: l.kind, label: l.label, amount: numericFromSatang(l.amountSatang), source: l.source, sourceRef: l.sourceRef ?? null, createdBy: l.createdBy };
+      if (l.source === "auto") {
+        // an AUTO line is idempotent on (slip, kind, source_ref) via migration 0011's partial unique index: a duplicate is a no-op that returns the existing row
+        if (!l.sourceRef) throw new Error("an auto line needs a sourceRef");
+        const [ins] = await exec.insert(boPaySlipLine).values(values).onConflictDoNothing().returning();
+        if (ins) return line(ins);
+        const [have] = await exec.select().from(boPaySlipLine).where(and(eq(boPaySlipLine.slipId, l.slipId), eq(boPaySlipLine.kind, l.kind), eq(boPaySlipLine.sourceRef, l.sourceRef), eq(boPaySlipLine.source, "auto"))).limit(1);
+        return line(have!);
+      }
+      const [r] = await exec.insert(boPaySlipLine).values(values).returning();
       return line(r!);
     },
     async syncAutoLines(slipId, kinds, desired, actor) {

@@ -9,7 +9,7 @@
 // owner with nobody noticing; add it when a reader needs it.
 //
 // Names are `sb*` so they never collide with `schema.ts`'s narrower `pub*` declarations or `pub-timetable.ts`'s `tt*`.
-import { date, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** `course_packages` — a sold course. F4 (TASK-860, SB migration `0074`) stores the facts the Bonus lines read. */
 export const sbCourses = pgTable("course_packages", {
@@ -63,6 +63,12 @@ export const sbStudents = pgTable("students", {
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   nickname: text("nickname"),
+});
+
+/** `teachers` — only whether a coach is the system teacher ("No Teacher", TASK-861), which is never a bonus coach. */
+export const sbTeachers = pgTable("teachers", {
+  id: uuid("id").primaryKey(),
+  isSystem: boolean("is_system").notNull(),
 });
 
 export const sbSubjects = pgTable("subjects", {

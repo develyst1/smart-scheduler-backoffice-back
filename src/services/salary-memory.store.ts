@@ -86,7 +86,12 @@ export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profi
       return out;
     },
     async insertLine(l) {
-      const row: Line = { ...l, id: id() };
+      if (l.source === "auto") {
+        if (!l.sourceRef) throw new Error("an auto line needs a sourceRef");
+        const dup = [...lines.values()].find((x) => x.source === "auto" && x.slipId === l.slipId && x.kind === l.kind && x.sourceRef === l.sourceRef);
+        if (dup) return dup; // mirrors the 0011 partial unique index: a duplicate auto line is a no-op
+      }
+      const row: Line = { ...l, sourceRef: l.sourceRef ?? null, id: id() };
       lines.set(row.id, row);
       return row;
     },

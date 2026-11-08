@@ -25,6 +25,7 @@ import { requireRole } from "../middleware/auth";
 import { notFound } from "../lib/http";
 import { createSalaryService, type SalaryService } from "../services/salary.service";
 import { dbSalaryStore } from "../services/salary-db.store";
+import { applyBonusLinesFor } from "../services/bonus-lines.service"; // 🔻 TASK-867
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A malformed id is "not found", never a database error. */
@@ -59,6 +60,8 @@ export function makeSalaryRoutes(service: SalaryService) {
       return c.json(await service.createPeriod(year, month), 201);
     })
     .post("/periods/:id/run", ceo, async (c) => c.json(await service.runPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
+    // 🔻 TASK-867 (Brew, Team C): Bonus 50 / 100 candidates → auto pay lines. Idempotent; 409 LOCKED on a locked period. Logic: services/bonus-lines.service.ts
+    .post("/periods/:id/apply-bonus", ceo, async (c) => c.json(await applyBonusLinesFor(service, uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"), c.get("user").sub)))
     .get("/periods/:id", ceo, async (c) => c.json(await service.getPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
     .post("/periods/:id/lock", ceo, async (c) => c.json(await service.lockPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
     .get("/periods/:id/export", ceo, async (c) => {

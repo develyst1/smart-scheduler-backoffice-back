@@ -250,6 +250,47 @@ describe("the month a bonus falls in = the PURCHASE's created_at, in Bangkok tim
   });
 });
 
+describe("the system teacher ('No Teacher', is_system) is never a bonus coach — impossible by construction", () => {
+  const change = { coachChangedAt: "2026-08-01T05:00:00Z", latestTeacherId: "coach-latest" };
+  test("Bonus 50: a trial coached by the system teacher is NOT a candidate", () => {
+    const sys = withTrial();
+    sys.trial!.coachIsSystem = true;
+    expect(bonus50Candidates([sys], rules())).toEqual([]);
+  });
+  test("Bonus 50: coachIsSystem false or absent changes nothing", () => {
+    const a = withTrial();
+    a.trial!.coachIsSystem = false;
+    expect(bonus50Candidates([a, withTrial()], rules())).toHaveLength(2);
+  });
+  test("Bonus 100: the system teacher as the old entitlement's FIRST coach ⇒ no candidate (the fixture Sector asked for)", () => {
+    expect(bonus100Candidates([renewal("COURSE", "COURSE", { firstTeacherIsSystem: true })], rules())).toEqual([]);
+  });
+  test("…whatever the pick or the change says", () => {
+    for (const pick of [null, "FIRST", "LATEST", "SHARE"]) {
+      expect(bonus100Candidates([renewal("COURSE", "COURSE", { ...change, bonus100Pick: pick, firstTeacherIsSystem: true })], rules())).toEqual([]);
+    }
+  });
+  test("Bonus 100: LATEST or SHARE that would pay a system LATEST coach ⇒ no candidate", () => {
+    expect(bonus100Candidates([renewal("COURSE", "COURSE", { ...change, bonus100Pick: "LATEST", latestTeacherIsSystem: true })], rules())).toEqual([]);
+    expect(bonus100Candidates([renewal("COURSE", "COURSE", { ...change, bonus100Pick: "SHARE", latestTeacherIsSystem: true })], rules())).toEqual([]);
+  });
+  test("Bonus 100: FIRST with a system LATEST coach is still a candidate (only the first coach is paid; nothing pays the system one)", () => {
+    const [c] = bonus100Candidates([renewal("COURSE", "COURSE", { ...change, bonus100Pick: "FIRST", latestTeacherIsSystem: true })], rules());
+    expect(c).toMatchObject({ status: "RESOLVED", pick: "FIRST", shares: [{ coachId: "coach-first", fraction: 1 }] });
+  });
+  test("Bonus 100: an UNRESOLVED change to a system LATEST coach stays LISTED (no share pays it; a human still has to pick)", () => {
+    const [c] = bonus100Candidates([renewal("COURSE", "COURSE", { ...change, latestTeacherIsSystem: true })], rules());
+    expect(c).toMatchObject({ status: "UNRESOLVED", shares: [] });
+  });
+  test("an ordinary coach is untouched: the flags false give exactly the old answers", () => {
+    const [c] = bonus100Candidates([renewal("COURSE", "COURSE", { ...change, bonus100Pick: "SHARE", firstTeacherIsSystem: false, latestTeacherIsSystem: false })], rules());
+    expect(c?.shares).toHaveLength(2);
+  });
+  test("a voucher as the old entitlement is covered too (its first coach)", () => {
+    expect(bonus100Candidates([renewal("COURSE", "VOUCHER", { firstTeacherIsSystem: true }, {})], rules({ renewalAcrossCourseVoucher: true }))).toEqual([]);
+  });
+});
+
 describe("shape and determinism", () => {
   test("DEFAULT_RULES are the team's current readings and cannot be mutated", () => {
     expect(DEFAULT_RULES).toEqual({ goLiveDate: null, bonus50TrialBeforeGoLive: false, bonus100OldCourseBeforeGoLive: true, renewalAcrossCourseVoucher: false });

@@ -69,7 +69,7 @@ describe("requireRole(\"ceo\") on every /salary route", () => {
       const k = `${r.method} ${r.path}`;
       byRoute.set(k, [...(byRoute.get(k) ?? []), r.handler.name]);
     }
-    expect(byRoute.size).toBe(15); // SPEC-100's 11 routes + TASK-871's 2 FL-rate routes + TASK-878's OT and Merit
+    expect(byRoute.size).toBe(16); // SPEC-100's 11 routes + TASK-871's 2 FL-rate routes + TASK-878's OT and Merit + 🔻 TASK-867's apply-bonus
     for (const [route, names] of byRoute) expect([route, names.includes("requireRole")]).toEqual([route, true]);
   });
 

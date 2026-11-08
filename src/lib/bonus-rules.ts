@@ -48,6 +48,8 @@ export interface TrialRef {
   date: string;
   subject: string | null;
   coachId: string;
+  /** `teachers.is_system` ("No Teacher", TASK-861). The loader sets it; a system teacher is never a bonus coach. */
+  coachIsSystem?: boolean;
 }
 
 /** The child's previous entitlement (`prev_course_id` / `prev_voucher_id`), with the facts the shares need. */
@@ -61,6 +63,9 @@ export interface PrevRef {
   bonus100Pick: string | null;
   /** The previous entitlement's first ATTENDED session date (eligibility's PT-day check needs it). */
   firstAttendedDate: string | null;
+  /** `teachers.is_system` of the first / latest coach (set by the loader). A system teacher is never paid. */
+  firstTeacherIsSystem?: boolean;
+  latestTeacherIsSystem?: boolean;
 }
 
 /** One sold course or voucher, with everything the rules look at. */
@@ -205,6 +210,9 @@ export function bonus50Candidates(rows: readonly PurchaseRow[], rules: BonusRule
   const out: Bonus50Candidate[] = [];
   for (const r of rows) {
     if (!r.trial) continue;
+    // The system teacher ("No Teacher", `is_system`) only ever sits on park-fee OTHER blocks, never on a trial; this makes
+    // that impossible BY CONSTRUCTION: a trial coached by it is not a candidate (relayed rule, Silver via Porter).
+    if (r.trial.coachIsSystem) continue;
     if (!inMonth(r.createdAt, month)) continue;
     const date = bangkokDateOf(r.createdAt);
     if (rules.goLiveDate) {
@@ -247,6 +255,10 @@ export function bonus100Candidates(rows: readonly PurchaseRow[], rules: BonusRul
       if (prevDate < rules.goLiveDate && !rules.bonus100OldCourseBeforeGoLive) continue;
     }
     const s = resolveCoachShares(prev);
+    // The system teacher is not a person to pay. An old entitlement whose FIRST coach is it, or whose resolved shares would
+    // pay it (a whole-course change to it picked as LATEST / SHARE), is not a candidate. Impossible by construction.
+    if (prev.firstTeacherIsSystem) continue;
+    if (prev.latestTeacherIsSystem && s.shares.some((x) => x.coachId === prev.latestTeacherId)) continue;
     out.push({
       purchaseKind: r.kind,
       purchaseId: r.id,
