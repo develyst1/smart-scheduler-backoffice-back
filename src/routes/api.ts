@@ -9,6 +9,7 @@ import { internalJobsRoutes } from "./internal-jobs"; // 🔻 TASK-919
 import { demoRoutes } from "./demo"; // 🔻 TASK-915
 import { notificationRoutes } from "./notifications"; // 🔻 TASK-917
 import { reportsRoutes } from "./reports"; // 🔻 TASK-924
+import { userRoutes } from "./users"; // 🔻 TASK-930
 import { requireAuth } from "../middleware/auth";
 
 /**
@@ -32,6 +33,8 @@ export const v1 = new Hono()
   .route("/notifications", notificationRoutes)
   // 🔻 TASK-924 / SPEC-103 — the All Report API (STUDENT here; COURSE + REPORT = TASK-926): /api/v1/reports/*, ceo + admin, money CEO-only.
   .route("/reports", reportsRoutes)
+  // 🔻 TASK-930 — back-office user management (R0.1): admit a front-office person, list, deactivate; CEO only. The password stays the front office's.
+  .route("/users", userRoutes)
   // 🔻 TASK-887 (the FINAL remind ↔ send contract, A) — the INTERNAL read smart-scheduler-back's reminders call: /api/v1/internal/salary/unconfirmed, behind a FAIL-CLOSED X-Service-Token guard (no user token opens it).
   .route("/internal/salary", internalSalaryRoutes)
   // 🔻 TASK-919 — the Monday Low-Stock job's endpoint: /api/v1/internal/jobs/low-stock-weekly, behind the same FAIL-CLOSED X-Service-Token guard.

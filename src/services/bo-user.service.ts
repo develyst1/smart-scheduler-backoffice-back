@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { boUsers } from "../db/schema";
 import { isRole, type Role } from "../lib/jwt";
+import { foCredential, type FoCredential } from "./bo-user-admin.service";
 
 export type BoUserRow = typeof boUsers.$inferSelect;
 
@@ -38,10 +39,18 @@ export async function checkLogin(
   username: string,
   password: string,
   lookup: (username: string) => Promise<BoUserRow | undefined> = findBoUserByUsername,
+  fo: (foUserId: string) => Promise<FoCredential | undefined> = foCredential,
 ): Promise<BoUserDTO | null> {
   const row = await lookup(username);
   if (!row || !row.active) return null;
-  if (!(await verifyPassword(password, row.passwordHash))) return null;
+  let hash = row.passwordHash;
+  if (row.foUserId) {
+    // TASK-930: an ADMITTED person signs in with the front office's LIVE password; a front-office disable (or a vanished person) refuses. A back-office-own row (the CEO seed) skips this.
+    const cred = await fo(row.foUserId);
+    if (!cred || cred.disabledAt) return null;
+    hash = cred.passwordHash;
+  }
+  if (!(await verifyPassword(password, hash))) return null;
   return toDTO(row);
 }
 

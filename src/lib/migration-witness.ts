@@ -206,4 +206,10 @@ export const BO_WITNESSES: Witness[] = [
       "tables landed before it. Nothing else creates it.",
     rerunnable: true, // CREATE TABLE / INDEX IF NOT EXISTS, seeds ON CONFLICT DO NOTHING
   },
+  {
+    tag: "0021_bo_users_fo_user_id",
+    probe: { kind: "index", index: "bo_users_fo_user_id_uq", schema: "bo" },
+    why: "0021 adds bo.users.fo_user_id (TASK-930: the link to the front-office user) and then its partial unique index, the LAST statement, so the index existing proves the column landed. Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN / CREATE INDEX IF NOT EXISTS
+  },
 ];

@@ -9,11 +9,12 @@ import * as v from "../validation";
 import { signToken } from "../lib/jwt";
 import { unauthorized } from "../lib/http";
 import { checkLogin, findBoUserByUsername, type BoUserRow } from "../services/bo-user.service";
+import type { FoCredential } from "../services/bo-user-admin.service";
 
 const WRONG = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"; // ONE sentence for unknown / wrong / inactive
 
 /** `lookup` is injectable so the route is testable without a database. */
-export function makeAuthRoutes(lookup: (username: string) => Promise<BoUserRow | undefined> = findBoUserByUsername) {
+export function makeAuthRoutes(lookup: (username: string) => Promise<BoUserRow | undefined> = findBoUserByUsername, fo?: (foUserId: string) => Promise<FoCredential | undefined>) {
   return new Hono().post("/login", zValidator("json", v.login), async (c) => {
     const { username, password } = c.req.valid("json");
 
@@ -26,7 +27,7 @@ export function makeAuthRoutes(lookup: (username: string) => Promise<BoUserRow |
       }
     }
 
-    const user = await checkLogin(username, password, lookup);
+    const user = await checkLogin(username, password, lookup, fo);
     if (!user) throw unauthorized(WRONG);
     const token = await signToken({ sub: user.username, role: user.role, teacherId: user.teacherId });
     return c.json({ token, user });

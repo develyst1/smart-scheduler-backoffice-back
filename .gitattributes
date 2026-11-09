@@ -1,0 +1,3 @@
+# Drizzle migration SQL is hashed into the migration ledger (migration-witness);
+# the hash is computed over the LF file, so these must never be CRLF-normalized.
+*.sql text eol=lf

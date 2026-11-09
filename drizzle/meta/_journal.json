@@ -148,6 +148,13 @@
       "when": 1794800000000,
       "tag": "0020_bo_notification",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0021_bo_users_fo_user_id",
+      "breakpoints": true
     }
   ]
 }

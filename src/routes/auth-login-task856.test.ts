@@ -25,6 +25,7 @@ beforeAll(async () => {
     role,
     teacherId: null,
     active: true,
+    foUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...extra,

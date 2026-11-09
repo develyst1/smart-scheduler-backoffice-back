@@ -658,13 +658,21 @@ export const boUsers = bo.table(
      */
     teacherId: uuid("teacher_id"),
     active: boolean("active").notNull().default(true),
+    /**
+     * TASK-930 (`0021`) — the front-office user this row ADMITS (`public.users.id`). A plain uuid, NO FK (`public` is smart-scheduler-back's). Set ⇒ sign-in verifies
+     * against the LIVE front-office hash + `disabled_at` (same login as the front office); NULL ⇒ a back-office-own row (the env-seeded CEO), verified on its own hash.
+     */
+    foUserId: uuid("fo_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
   },
-  (t) => [uniqueIndex("bo_users_username_uq").on(t.username)],
+  (t) => [
+    uniqueIndex("bo_users_username_uq").on(t.username),
+    uniqueIndex("bo_users_fo_user_id_uq").on(t.foUserId).where(sql`${t.foUserId} is not null`),
+  ],
 );
 
 // ── Thin-slip pay-run + slip engine (SPEC-100 / TASK-865) ───────────────────────────────────────────────────────
