@@ -1,0 +1,443 @@
+{
+  "task": "stock routes — route-level tests",
+  "proves": "src/routes/stock-routes-more.test.ts",
+  "tests": "src/routes/stock-routes-more.test.ts",
+  "note": "Each mutant breaks one validator or gate of a mounted /stock route (products reads, POST /products, PATCH /products/:id, POST /import/preview); the route-level tests must fail for each.",
+  "mutations": [
+    {
+      "id": "R1",
+      "what": "GET /products has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/products\", adminAuth,",
+              "to": ".get(\"/products\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "what": "GET /products accepts a 101-char search",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "z.object({ q: z.string().max(100).optional() })",
+              "to": "z.object({ q: z.string().optional() })"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "what": "GET /revenue-categories has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/revenue-categories\", adminAuth,",
+              "to": ".get(\"/revenue-categories\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "what": "GET /low-stock has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/low-stock\", adminAuth,",
+              "to": ".get(\"/low-stock\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R5",
+      "what": "GET /low-stock/thresholds has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/low-stock/thresholds\", adminAuth,",
+              "to": ".get(\"/low-stock/thresholds\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "what": "POST /products is open to admins",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/products\", requireRole(\"ceo\"),",
+              "to": ".post(\"/products\", adminAuth,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "what": "POST /products has no validator",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/products\", requireRole(\"ceo\"), zValidator(\"json\", productCreateBody), async (c) => c.json(await stockWriteService.createProduct(c.req.valid(\"json\")",
+              "to": ".post(\"/products\", requireRole(\"ceo\"), zValidator(\"json\", z.any()), async (c) => c.json(await stockWriteService.createProduct(c.req.valid(\"json\")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "what": "code may be empty",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  code: z.string().min(1).max(64),",
+              "to": "  code: z.string().max(64),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "what": "code may be 65+ chars",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  code: z.string().min(1).max(64),",
+              "to": "  code: z.string().min(1),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "what": "name may be empty",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  name: z.string().min(1).max(200),\n  category: z.string().max(100).nullable(),\n  priceSatang",
+              "to": "  name: z.string().max(200),\n  category: z.string().max(100).nullable(),\n  priceSatang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "what": "price may be fractional",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "const satang = z.number().int().min(0).max(1_000_000_000);",
+              "to": "const satang = z.number().min(0).max(1_000_000_000);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P7",
+      "what": "price may be negative",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "const satang = z.number().int().min(0).max(1_000_000_000);",
+              "to": "const satang = z.number().int().max(1_000_000_000);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P8",
+      "what": "price may be huge",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "const satang = z.number().int().min(0).max(1_000_000_000);",
+              "to": "const satang = z.number().int().min(0);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P9",
+      "what": "opening quantity may be negative",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  openingQuantity: z.number().int().min(0).max(1_000_000),",
+              "to": "  openingQuantity: z.number().int().max(1_000_000),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P10",
+      "what": "opening quantity may be fractional",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  openingQuantity: z.number().int().min(0).max(1_000_000),",
+              "to": "  openingQuantity: z.number().min(0).max(1_000_000),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P11",
+      "what": "the revenue category is not a uuid",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  revenueCategoryId: z.string().uuid(), // 🔻 row 21",
+              "to": "  revenueCategoryId: z.string(), // 🔻 row 21"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P12",
+      "what": "the revenue category is optional on create",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  revenueCategoryId: z.string().uuid(), // 🔻 row 21",
+              "to": "  revenueCategoryId: z.string().uuid().optional(), // 🔻 row 21"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P13",
+      "what": "active may be any value",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  commissionGroup: z.string().max(100).nullable(),\n  active: z.boolean(),",
+              "to": "  commissionGroup: z.string().max(100).nullable(),\n  active: z.any(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P14",
+      "what": "category length is unbounded",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  category: z.string().max(100).nullable(),\n  priceSatang: satang,",
+              "to": "  category: z.string().nullable(),\n  priceSatang: satang,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T1",
+      "what": "PATCH /products/:id is open to admins",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".patch(\"/products/:id\", requireRole(\"ceo\"),",
+              "to": ".patch(\"/products/:id\", adminAuth,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "what": "PATCH /products/:id has no id check",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw badRequest(\"id ไม่ถูกต้อง\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "what": "a patched name may be empty",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  name: z.string().min(1).max(200).optional(),\n  priceSatang: satang.optional(),",
+              "to": "  name: z.string().max(200).optional(),\n  priceSatang: satang.optional(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T4",
+      "what": "a patched revenue category may be cleared (null)",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  revenueCategoryId: z.string().uuid().optional(), // can change, never cleared",
+              "to": "  revenueCategoryId: z.string().uuid().nullable().optional(), // can change, never cleared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T5",
+      "what": "a patched revenue category is not a uuid",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  revenueCategoryId: z.string().uuid().optional(), // can change, never cleared",
+              "to": "  revenueCategoryId: z.string().optional(), // can change, never cleared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T6",
+      "what": "a patched price may be fractional",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  priceSatang: satang.optional(),\n  category: z.string().max(100).nullable().optional(),",
+              "to": "  priceSatang: z.number().optional(),\n  category: z.string().max(100).nullable().optional(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T7",
+      "what": "a patched active may be any value",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  commissionGroup: z.string().max(100).nullable().optional(),\n  active: z.boolean().optional(),",
+              "to": "  commissionGroup: z.string().max(100).nullable().optional(),\n  active: z.any().optional(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "U1",
+      "what": "the preview is open to admins",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/import/preview\", requireRole(\"ceo\"),",
+              "to": ".post(\"/import/preview\", adminAuth,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "U2",
+      "what": "the declared-length check is gone",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "if (len > MAX_UPLOAD_BYTES + 64 * 1024) throw badRequest(\"ไฟล์ใหญ่เกิน 5 MB\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "U4",
+      "what": "a text field passes for a file",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "if (!(file instanceof File)) throw badRequest(\"ต้องแนบไฟล์ในฟิลด์ «file»\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

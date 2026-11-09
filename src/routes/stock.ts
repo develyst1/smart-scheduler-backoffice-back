@@ -54,7 +54,7 @@ export const productPatchBody = z.object({
 });
 export const stockInBody = z.object({
   idempotencyKey: z.string().regex(/^[A-Za-z0-9_:.-]{8,100}$/),
-  receivedOn: z.string().regex(/^d{4}-d{2}-d{2}$/),
+  receivedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   lines: z.array(z.object({ itemId: z.string().uuid(), qty: z.number().int().min(1).max(1_000_000) })).min(1).max(200),
 });
 
