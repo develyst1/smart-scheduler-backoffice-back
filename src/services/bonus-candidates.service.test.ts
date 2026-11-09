@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { ApiException } from "../lib/http";
-import { DEFAULT_RULES, monthWindow, type PurchaseRow } from "../lib/bonus-rules";
+import { DEFAULT_RULES, monthWindow, windowBounds, type PurchaseRow } from "../lib/bonus-rules";
 import { sbBookings, sbCourses, sbStudents, sbSubjects, sbTeachers, sbVouchers } from "../db/schema-salary-b-read";
 import {
   coursesInMonthQuery,
@@ -38,6 +38,19 @@ describe("the month window and source = 'SALE' (rendered SQL, no connection)", (
     expect(v.sql).toContain('"vouchers"."created_at" >= $2');
     expect(v.sql).toContain('"vouchers"."created_at" < $3');
     expect(v.params).toEqual(["SALE", W.start.toISOString(), W.end.toISOString()]);
+  });
+  test("🔻 rework: for the pay period 30/9 – 30/10 the bound window is [29/9 17:00Z, 30/10 17:00Z) — the edges of the PERIOD, not of the month", () => {
+    const P = windowBounds({ from: "2026-09-30", to: "2026-10-30" });
+    expect(coursesInMonthQuery(d, P).toSQL().params).toEqual(["SALE", "2026-09-29T17:00:00.000Z", "2026-10-30T17:00:00.000Z"]);
+    expect(vouchersInMonthQuery(d, P).toSQL().params).toEqual(["SALE", "2026-09-29T17:00:00.000Z", "2026-10-30T17:00:00.000Z"]);
+  });
+  test("🔻 rework: loadPurchaseRowsFrom takes a range (the two purchase queries run) and a bad one throws BEFORE any query", async () => {
+    const ok = fakeDb(() => []);
+    await loadPurchaseRowsFrom(ok.db, { from: "2026-09-30", to: "2026-10-30" });
+    expect(ok.seen).toHaveLength(2);
+    const bad = fakeDb(() => []);
+    await expect(loadPurchaseRowsFrom(bad.db, { from: "2026-10-30", to: "2026-09-30" })).rejects.toThrow();
+    expect(bad.seen).toHaveLength(0);
   });
   test("an IMPORT row can never match: the SALE literal is a bound parameter, not 'IMPORT'", () => {
     expect(c.params).not.toContain("IMPORT");
@@ -99,7 +112,7 @@ describe("listBonusCandidates — composition", () => {
   });
 
   test("returns { bonus50, bonus100 } from what the loader gives it, for the month asked", async () => {
-    let asked = "";
+    let asked: unknown = "";
     const got = await listBonusCandidates("2026-10", DEFAULT_RULES, async (m) => ((asked = m), [row()]));
     expect(asked).toBe("2026-10");
     expect(Object.keys(got).sort()).toEqual(["bonus100", "bonus50"]);
@@ -118,6 +131,30 @@ describe("listBonusCandidates — composition", () => {
   test("rules default to DEFAULT_RULES", async () => {
     const preGoLive = row({ trial: { bookingId: "t", date: "2020-01-01", subject: null, coachId: "c" } });
     expect((await listBonusCandidates("2026-10", undefined, async () => [preGoLive])).bonus50).toHaveLength(1); // no go-live date ⇒ no cut-off
+  });
+  test("🔻 rework: a date RANGE (the pay period) is accepted and reaches the loader unchanged; the filter is the range, not the month", async () => {
+    let asked: unknown;
+    const oct = { from: "2026-09-30", to: "2026-10-30" };
+    const sep30 = row({ id: "p-sep30", createdAt: "2026-09-30T05:00:00Z" }); // 30/9: NOT 2026-09's month… and IS October's period
+    const got = await listBonusCandidates(oct, DEFAULT_RULES, async (w) => ((asked = w), [sep30, row({ id: "p-oct31", createdAt: "2026-10-31T05:00:00Z" })]));
+    expect(asked).toEqual(oct);
+    expect(got.bonus50.map((c) => c.purchaseId)).toEqual(["p-sep30"]);
+    expect(got.bonus100.map((c) => c.purchaseId)).toEqual(["p-sep30"]);
+    // the same rows under the old MONTH form would have given the opposite answer for both purchases
+    const asMonth = await listBonusCandidates("2026-10", DEFAULT_RULES, async () => [sep30, row({ id: "p-oct31", createdAt: "2026-10-31T05:00:00Z" })]);
+    expect(asMonth.bonus50.map((c) => c.purchaseId)).toEqual(["p-oct31"]);
+  });
+  test.each([
+    [{ from: "2026-10-30", to: "2026-09-30" }],
+    [{ from: "2026-02-30", to: "2026-03-01" }],
+    [{ from: "2026-9-30", to: "2026-10-30" }],
+  ])("a bad range %p → 400 VALIDATION before any read", async (bad) => {
+    let called = false;
+    const err = await listBonusCandidates(bad, DEFAULT_RULES, async () => ((called = true), [])).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiException);
+    expect([err.status, err.code]).toEqual([400, "VALIDATION"]);
+    expect(err.message).toContain("range");
+    expect(called).toBe(false);
   });
   test.each(["2026-13", "2026-1", "202610", "", "2026-10-01"])("a bad month %p → 400 VALIDATION before any read", async (bad) => {
     let called = false;

@@ -4,6 +4,9 @@ import * as v from "../validation";
 import * as items from "../services/item.service";
 import * as tags from "../services/tag.service";
 import * as revenue from "../services/revenue.service";
+import { listStockMovements } from "../services/stock-read.service"; // 🔻 TASK-904
+import { MOVEMENT_TYPES } from "../lib/stock-read"; // 🔻 TASK-904
+import { z } from "zod"; // 🔻 TASK-904
 import { adminAuth } from "../middleware/auth";
 
 // REQ-006 / TASK-022 — the rebuilt backoffice API on the universal `bo` model. Mounted under /api/v1/bo/*.
@@ -23,6 +26,22 @@ import { adminAuth } from "../middleware/auth";
 // JWT on **every** request, and no service/script consumes these routes.
 export const boRoutes = new Hono()
   // ── Items ── prices (`unitPriceMinor`) and freelance ceilings (a teacher's rate + remaining budget).
+  // 🔻 TASK-904 — the Movement report's read: stock products only, from/to inclusive (≤ 366 days), NO money in the response.
+  .get(
+    "/stock/movements",
+    adminAuth,
+    zValidator(
+      "query",
+      z.object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        type: z.enum(MOVEMENT_TYPES).optional(),
+        q: z.string().max(100).optional(),
+        limit: z.coerce.number().int().min(1).max(1000).default(200),
+      }),
+    ),
+    async (c) => c.json(await listStockMovements(c.req.valid("query"))),
+  )
   .get("/items", adminAuth, zValidator("query", v.listBoItemsQuery), async (c) =>
     c.json({ items: await items.listItems(c.req.valid("query")) }),
   )

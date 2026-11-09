@@ -3,12 +3,13 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { boFlRate, boPayPeriod, boPaySlip, boPaySlipLine, boSalaryProfile } from "../db/schema";
+import type { AutoLine } from "../lib/pay-rules";
 import { numericFromSatang, satangFromNumeric } from "../lib/satang";
 import type { FlRate, Line, Period, Profile, SalaryStore, Slip } from "./salary.service";
 
 const period = (r: typeof boPayPeriod.$inferSelect): Period => ({ id: r.id, year: r.year, month: r.month, periodStart: r.periodStart, periodEnd: r.periodEnd, status: r.status, lockAt: r.lockAt, lockedAt: r.lockedAt });
 const slip = (r: typeof boPaySlip.$inferSelect): Slip => ({ id: r.id, periodId: r.periodId, teacherId: r.teacherId, baseSatang: satangFromNumeric(r.baseAmount), status: r.status });
-const line = (r: typeof boPaySlipLine.$inferSelect): Line => ({ id: r.id, slipId: r.slipId, kind: r.kind, label: r.label, amountSatang: satangFromNumeric(r.amount), source: r.source, createdBy: r.createdBy, sourceRef: r.sourceRef });
+const line = (r: typeof boPaySlipLine.$inferSelect): Line => ({ id: r.id, slipId: r.slipId, kind: r.kind, label: r.label, amountSatang: satangFromNumeric(r.amount), source: r.source, createdBy: r.createdBy, sourceRef: r.sourceRef, classType: r.classType });
 const profile = (r: typeof boSalaryProfile.$inferSelect): Profile => ({
   teacherId: r.teacherId,
   employmentType: r.employmentType,
@@ -144,6 +145,7 @@ export function makeDbSalaryStore(exec: typeof db = db): SalaryStore {
         let inserted = 0;
         let updated = 0;
         let removed = 0;
+        const insertedLines: AutoLine[] = [];
         for (const l of have) {
           const d = want.get(key(l.kind, l.sourceRef));
           if (!d) {
@@ -161,12 +163,13 @@ export function makeDbSalaryStore(exec: typeof db = db): SalaryStore {
           // the partial unique index (0011) turns a concurrent duplicate into a no-op, not a second row
           const r = await tx
             .insert(boPaySlipLine)
-            .values({ slipId, kind: d.kind, label: d.label, amount: numericFromSatang(d.amountSatang), source: "auto", sourceRef: d.sourceRef, createdBy: actor })
+            .values({ slipId, kind: d.kind, label: d.label, amount: numericFromSatang(d.amountSatang), source: "auto", sourceRef: d.sourceRef, classType: d.classType ?? null, createdBy: actor })
             .onConflictDoNothing()
             .returning({ id: boPaySlipLine.id });
           inserted += r.length;
+          if (r.length) insertedLines.push(d);
         }
-        return { inserted, updated, removed };
+        return { inserted, updated, removed, insertedLines };
       });
     },
     async getLine(id) {
@@ -175,6 +178,18 @@ export function makeDbSalaryStore(exec: typeof db = db): SalaryStore {
     },
     async deleteLine(id) {
       await exec.delete(boPaySlipLine).where(eq(boPaySlipLine.id, id));
+    },
+    /** TASK-886: active profiles joined to `public.teachers` (read-only), never `is_system`, ordered by name. Names + the merit flag only: no pay column is selected. */
+    async listEntriesPeople() {
+      const rows = await exec.execute(
+        sql`select p.teacher_id::text as id, coalesce(nullif(btrim(t.nickname), ''), nullif(btrim(t.name), '')) as name, p.merit_eligible as merit
+            from bo.salary_profile p join public.teachers t on t.id = p.teacher_id
+            where p.active and not t.is_system
+            order by 2, 1`,
+      );
+      const out: { teacherId: string; name: string; meritEligible: boolean }[] = [];
+      for (const r of rows) if (r.name) out.push({ teacherId: String(r.id), name: String(r.name), meritEligible: Boolean(r.merit) });
+      return out;
     },
     /** Display only: a READ of `public.teachers` (owned by smart-scheduler-back; never written here, not an FK). Nickname first (how coaches are known), else name. */
     async teacherNames(ids) {

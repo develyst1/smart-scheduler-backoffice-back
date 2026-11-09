@@ -113,3 +113,6 @@ dist
 .tern-port
 .env.sid
 .env.uat
+
+# QA evidence samples (personal data) — never tracked (owner 2026-11-09; prior commit 62271d7)
+tests/evidence/

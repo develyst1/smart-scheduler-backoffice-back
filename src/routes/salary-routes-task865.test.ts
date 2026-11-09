@@ -69,7 +69,7 @@ describe("requireRole(\"ceo\") on every /salary route", () => {
       const k = `${r.method} ${r.path}`;
       byRoute.set(k, [...(byRoute.get(k) ?? []), r.handler.name]);
     }
-    expect(byRoute.size).toBe(16); // SPEC-100's 11 routes + TASK-871's 2 FL-rate routes + TASK-878's OT and Merit + 🔻 TASK-867's apply-bonus
+    expect(byRoute.size).toBe(37); // 🔻 TASK-922: + the 4 /reports/* GETs; 🔻 TASK-921: + POST /periods/:id/apply-commission; 🔻 TASK-887: + POST /my-slip/confirm and POST /periods/:id/remind; 🔻 TASK-885: + GET /daily (the Daily Training Report); 🔻 TASK-886: + entries/people; 🔻 TASK-879: + the 2 slip exports; + TASK-880's my-slip and entries; SPEC-100's 11 routes + TASK-871's 2 FL-rate routes + TASK-878's OT and Merit + 🔻 TASK-867's apply-bonus + 🔻 TASK-868's apply-transport and the 7 /transport routes (ceo OR admin, still behind requireRole)
     for (const [route, names] of byRoute) expect([route, names.includes("requireRole")]).toEqual([route, true]);
   });
 
@@ -117,7 +117,7 @@ describe("the HTTP round trip (the shapes of SPEC-100 §5)", () => {
     expect(slip.teacherName).toBe("ต้น");
     expect(slip.total).toBe(2_500_000 + 150_000 - 30_050);
     expect(slip.lines.map((l: any) => l.amount)).toEqual([150_000, -30_050]);
-    expect(Object.keys(slip.lines[0]).sort()).toEqual(["amount", "id", "kind", "kindLabel", "label", "source"]);
+    expect(Object.keys(slip.lines[0]).sort()).toEqual(["amount", "classType", "id", "kind", "kindLabel", "label", "source"]);
 
     expect((await call(app, "DELETE", `/slips/${slipId}/lines/${l2.id}`)).status).toBe(204);
     expect((await json(await call(app, "GET", `/slips/${slipId}`))).total).toBe(2_650_000);

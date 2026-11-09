@@ -102,6 +102,83 @@ export function buildBlock(sums: { type: string; amountMinor: number }[]): Block
   };
 }
 
+// ───────────────────────────────── the ECA payment entry (TASK-890, REQ-120 §2 R2.2) ─────────────────────────────────
+// "per term: price per class × students × classes per term (ฟีน enters). It counts on the date the school pays." One entry = ONE
+// revenue line. Money is integer satang; the column is a 32-bit int, so a total over that is refused, never wrapped.
+
+/** The largest value of `bo.revenue_line.amount_minor` (a Postgres `integer`). */
+export const INT32_MAX = 2_147_483_647;
+/** The term's length: "Term 2", "2026 Term 1"… */
+export const ECA_TERM_MAX = 40;
+
+const isPosInt = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n > 0;
+
+/** price per class × students × classes per term, in satang; `null` when any factor is not a positive integer or the total does not fit 32 bits. */
+export function ecaAmountMinor(pricePerClassMinor: number, students: number, classesPerTerm: number): number | null {
+  if (!isPosInt(pricePerClassMinor) || !isPosInt(students) || !isPosInt(classesPerTerm)) return null;
+  const total = pricePerClassMinor * students * classesPerTerm;
+  return total <= INT32_MAX ? total : null; // every factor is a positive safe integer, so a product past 2^53 is also past INT32_MAX: no separate "safe" check is needed
+}
+
+/** satang → the baht text: `150000` → "1500", `15050` → "150.50" (whole baht when it is whole; never a float). */
+export function bahtText(minor: number): string {
+  const whole = Math.floor(minor / 100);
+  const frac = minor % 100;
+  return frac === 0 ? String(whole) : `${whole}.${String(frac).padStart(2, "0")}`;
+}
+
+/** The line's remark: `<price> ฿ × <students> students × <classes> classes` (R2.2's three factors, readable on the history). */
+export function ecaRemark(pricePerClassMinor: number, students: number, classesPerTerm: number): string {
+  return `${bahtText(pricePerClassMinor)} ฿ × ${students} students × ${classesPerTerm} classes`;
+}
+
+// ───────────────────────────────── the refund (SPEC-099 §10, TASK-893) ─────────────────────────────────
+// A refund is ONE negative REFUND line (R2.3: an expense in the month of the refund), keyed so a sale is refunded once. The sources list
+// is the CEO's picker: the latest courses and vouchers matching a student, each with what a refund would cancel.
+
+/** The idempotency key of a sale's refund line: `rl:refund:course:<id>` / `rl:refund:voucher:<id>` (the type in lower case, as `rl:course:<id>`). */
+export const refundKeyFor = (refType: PaymentRefType, refId: string): string => `rl:refund:${refType.toLowerCase()}:${refId}`;
+
+/** The line's amount: a refund is an EXPENSE, so the stored amount is negative (`revenue_line_sign_ck`: REFUND < 0). */
+export const refundAmountMinor = (amountMinor: number): number => -amountMinor;
+
+/** 0 < amount <= fee, both whole satang. `false` for a non-integer, zero, negative, or an amount over the fee. */
+export const refundWithinFee = (amountMinor: number, feeMinor: number): boolean =>
+  Number.isInteger(amountMinor) && amountMinor > 0 && amountMinor <= feeMinor;
+
+/** SQL `LIKE` metacharacters in the CEO's search text are literals: `50%` finds "50%", not everything. */
+export const escapeLike = (q: string): string => q.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/** The most sources one search returns. */
+export const REFUND_SOURCES_LIMIT = 20;
+
+/** Statuses that count as a lesson held (the SB course set: ATTENDED, NO_SHOW) and as still to come (PENDING, CONFIRMED, EXTENDED = `COURSE_LIVE`). */
+const DELIVERED = new Set(["ATTENDED", "NO_SHOW"]);
+const LIVE = new Set(["PENDING", "CONFIRMED", "EXTENDED"]);
+
+/** One plan's sessions → the two numbers the picker shows. `attended` = held; `toCancel` = what `endCourse` / `endVoucher` would cancel (live, and for a voucher dated today or later; none once ended). */
+export function sessionCounts(
+  refType: PaymentRefType,
+  sessions: readonly { status: string; date: string }[],
+  today: string,
+  ended: boolean,
+): { attended: number; toCancel: number } {
+  const attended = sessions.filter((s) => DELIVERED.has(s.status)).length;
+  if (ended) return { attended, toCancel: 0 };
+  const toCancel = sessions.filter((s) => LIVE.has(s.status) && (refType === "COURSE" || s.date >= today)).length;
+  return { attended, toCancel };
+}
+
+/** `<child> · Course 10` / `<child> · Voucher 5 Hr`: the child's nickname, else name. */
+export function planLabel(refType: PaymentRefType, child: { nickname: string | null; name: string } | null, size: number): string {
+  const who = child ? (child.nickname?.trim() ? child.nickname.trim() : child.name.trim()) : "";
+  const what = refType === "COURSE" ? `Course ${size}` : `Voucher ${size} Hr`;
+  return who ? `${who} · ${what}` : what;
+}
+
+/** The Asia/Bangkok calendar date of an instant (UTC+7, no DST). */
+export const bangkokDate = (ts: Date | string): string => new Date(new Date(ts).getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+
 // ───────────────────────────────── the F2 payment record (SPEC-099 §8, TASK-874) ─────────────────────────────────
 // Pure rules. The service reads and writes; every decision lives here so it is a unit test.
 

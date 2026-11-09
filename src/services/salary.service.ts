@@ -2,13 +2,16 @@
 // round trip (create period → run → lines → total → lock → export) is testable with no database. Money is integer SATANG.
 // Every response money field (`baseAmount`, `total`, `amount`) is integer satang; the CSV is baht with 2 decimals.
 
-import { badRequest, conflict, notFound } from "../lib/http";
+import { ApiException, badRequest, conflict, notFound } from "../lib/http";
+import { formulaSafe } from "../lib/slip-sections"; // 🔻 TASK-879 (Silver's condition): a text cell that starts with = + - @ must not become a formula
 import { numericFromSatang } from "../lib/satang";
 
 import { payPeriodRange } from "../lib/pay-period";
 import { effectiveRoles, rolesProblem, roleOfDay, type EmploymentType } from "../lib/role-of-day";
 import { ddmm, extraHourLines, flPayLines, otPaySatang, type AutoLine, type HoursDay } from "../lib/pay-rules";
 import { readHours as defaultReadHours } from "./hours-reader";
+import { autoLineKey, fire, hoursText, manualLineKey, otherDetail, payLineText, realNotify, type NotifyFn } from "./salary-notify"; // 🔻 TASK-920
+import { bangkokDate } from "../lib/stock-read";
 export type { EmploymentType };
 export type ClassType = "private" | "duo" | "group" | "eca" | "camp";
 export const CLASS_TYPES: readonly ClassType[] = ["private", "duo", "group", "eca", "camp"];
@@ -19,7 +22,7 @@ export type LineKind = "base" | "other" | "extra_hour" | "ot" | "merit" | "bonus
 
 export interface Period { id: string; year: number; month: number; periodStart: string | null; periodEnd: string | null; status: PeriodStatus; lockAt: Date; lockedAt: Date | null }
 export interface Slip { id: string; periodId: string; teacherId: string; baseSatang: number; status: SlipStatus }
-export interface Line { id: string; slipId: string; kind: LineKind; label: string; amountSatang: number; source: "manual" | "auto"; createdBy: string; /** What an AUTO line was derived from (e.g. `fl:2026-10-14`); null on a manual line. */ sourceRef?: string | null }
+export interface Line { id: string; slipId: string; kind: LineKind; label: string; amountSatang: number; source: "manual" | "auto"; createdBy: string; /** What an AUTO line was derived from (e.g. `fl:2026-10-14`); null on a manual line. */ sourceRef?: string | null; /** 🔻 TASK-903: the class type of a `fl_pay` line (one line per FL date x class); null on every other kind. */ classType?: ClassType | null }
 
 /** The slip's display name for a line kind. `fl_pay` is shown as "Freelance Hour" (REQ-5010 item 4); the stored kind never changes. */
 export const KIND_LABEL: Record<LineKind, string> = { base: "Base", other: "Other", extra_hour: "Extra Hour", ot: "OT", merit: "Merit", bonus: "Bonus", commission: "Commission", fl_pay: "Freelance Hour", transport: "Transport" };
@@ -64,11 +67,13 @@ export interface SalaryStore {
    * Makes the slip's AUTO lines of `kinds` equal `desired` (keyed on kind + sourceRef, migration 0011's partial unique index): inserts the
    * missing, rewrites a changed label/amount, deletes an auto line no longer derived. Manual lines are never touched. Atomic.
    */
-  syncAutoLines(slipId: string, kinds: readonly LineKind[], desired: readonly AutoLine[], actor: string): Promise<{ inserted: number; updated: number; removed: number }>;
+  syncAutoLines(slipId: string, kinds: readonly LineKind[], desired: readonly AutoLine[], actor: string): Promise<{ inserted: number; updated: number; removed: number; /** 🔻 TASK-920: the lines actually inserted (not the ones kept or updated) */ insertedLines: AutoLine[] }>;
   getLine(id: string): Promise<Line | undefined>;
   deleteLine(id: string): Promise<void>;
   /** DISPLAY ONLY: teacher id → name, a read-only lookup of `public.teachers` (not an FK). An id with no row is absent from the map. */
   teacherNames(ids: string[]): Promise<Map<string, string>>;
+  /** TASK-886: ACTIVE profiles joined to their display name, never a system teacher ("No Teacher"); a profile with no teacher row is left out. NO pay. */
+  listEntriesPeople(): Promise<{ teacherId: string; name: string; meritEligible: boolean }[]>;
 }
 
 /** One CSV cell: quoted (with doubled quotes) only when it holds a comma, quote or line break. */
@@ -83,9 +88,12 @@ export const defaultLockAt = (year: number, month: number): Date => new Date(Dat
 export interface SalaryDeps {
   /** link 2's reader; injectable so the pay run is testable with no database. */
   readHours: (teacherId: string, start: string, end: string) => Promise<HoursDay[]>;
+  /** 🔻 TASK-920: the notifier for the Salary events (Extra Hour / OT / Other). Absent = notifications off (every existing test). Never throws; a failure is counted as `notifyFailed`. */
+  notify?: NotifyFn;
 }
 
-export function createSalaryService(store: SalaryStore, now: () => Date = () => new Date(), deps: SalaryDeps = { readHours: defaultReadHours }) {
+export function createSalaryService(store: SalaryStore, now: () => Date = () => new Date(), deps: SalaryDeps = { readHours: defaultReadHours, notify: realNotify }) {
+  const coachName = async (teacherId: string): Promise<string | null> => (await store.teacherNames([teacherId])).get(teacherId) ?? null; // 🔻 TASK-920
   /** The lazy 12:00 auto-lock: any read or write of a period first locks it (and its slips) once `now >= lock_at`. */
   async function fresh(period: Period): Promise<Period> {
     if (period.status === "open" && now().getTime() >= period.lockAt.getTime()) return store.lockPeriod(period.id, now());
@@ -115,7 +123,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
     vehicle: p.vehicle,
   });
   const periodDTO = (p: Period) => ({ id: p.id, year: p.year, month: p.month, periodStart: p.periodStart, periodEnd: p.periodEnd, status: p.status, lockAt: p.lockAt.toISOString(), lockedAt: p.lockedAt ? p.lockedAt.toISOString() : null });
-  const lineDTO = (l: Line) => ({ id: l.id, kind: l.kind, kindLabel: KIND_LABEL[l.kind], label: l.label, amount: l.amountSatang, source: l.source });
+  const lineDTO = (l: Line) => ({ id: l.id, kind: l.kind, kindLabel: KIND_LABEL[l.kind], classType: l.classType ?? null, label: l.label, amount: l.amountSatang, source: l.source });
 
   return {
     async listPeriods() {
@@ -142,7 +150,8 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       let created = 0;
       let refreshed = 0;
       let auto = { inserted: 0, updated: 0, removed: 0 };
-      const warnings: { teacherId: string; date: string; classType: string; problem: "no_fl_rate" }[] = [];
+      let notifyFailed = 0; // 🔻 TASK-920
+      const warnings: { teacherId: string; date: string; classType: ClassType; problem: "no_fl_rate" }[] = [];
       for (const p of (await store.listProfiles()).filter((x) => x.active && ["FT", "PT", "FL"].includes(x.employmentType))) {
         const r = await store.upsertDraftSlip(period.id, p.teacherId, p.baseSatang ?? 0);
         if (r === "created") created += 1;
@@ -155,8 +164,13 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
         for (const m of fl.missingRates) warnings.push({ teacherId: p.teacherId, date: m.date, classType: m.classType, problem: "no_fl_rate" });
         const sync = await store.syncAutoLines(slip.id, DERIVED_KINDS, [...fl.lines, ...extraHourLines(p, days)], "auto");
         auto = { inserted: auto.inserted + sync.inserted, updated: auto.updated + sync.updated, removed: auto.removed + sync.removed };
+        // 🔻 TASK-920: one Extra Hour item per line INSERTED by this run (a kept or updated line, FL pay and every re-run notify nothing). The line is committed; a failure is only counted.
+        for (const l of sync.insertedLines.filter((x) => x.kind === "extra_hour")) {
+          const day = l.sourceRef.slice(3); // eh:YYYY-MM-DD
+          notifyFailed += (await fire(deps.notify, { type: "Extra Hour", text: payLineText("Extra Hour", await coachName(p.teacherId), day, hoursText(l.extraMinutes ?? 0)), occurredOn: day, key: autoLineKey(slip.id, "extra_hour", l.sourceRef) })).failed;
+        }
       }
-      return { created, refreshed, ...(auto.inserted + auto.updated + auto.removed ? { autoLines: auto } : {}), ...(warnings.length ? { warnings } : {}) };
+      return { created, refreshed, ...(auto.inserted + auto.updated + auto.removed ? { autoLines: auto } : {}), ...(warnings.length ? { warnings } : {}), ...(notifyFailed ? { notifyFailed } : {}) };
     },
 
     /**
@@ -176,7 +190,79 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       if (slip.baseSatang <= 0) throw badRequest("the slip has no base salary to compute OT from");
       const amount = otPaySatang(slip.baseSatang, input.minutes);
       const hrs = Math.round((input.minutes / 60) * 100) / 100;
-      return lineDTO(await store.insertLine({ slipId: slip.id, kind: "ot", label: `${ddmm(input.date)}: OT ${hrs} Hr`, amountSatang: amount, source: "manual", createdBy: actor, sourceRef: null }));
+      const line = await store.insertLine({ slipId: slip.id, kind: "ot", label: `${ddmm(input.date)}: OT ${hrs} Hr`, amountSatang: amount, source: "manual", createdBy: actor, sourceRef: null });
+      // 🔻 TASK-920: the OT line is written; tell the assigned people (hours only, NO amount). A failure never undoes the line.
+      const nf = (await fire(deps.notify, { type: "OT", text: payLineText("OT", await coachName(slip.teacherId), input.date, hoursText(input.minutes)), occurredOn: input.date, key: manualLineKey(line.id) })).failed;
+      return { ...lineDTO(line), ...(nf ? { notifyFailed: nf } : {}) };
+    },
+
+    /** TASK-886 / SPEC-102 E2b - the admin-safe people list for the Entries picker: id, display name, meritEligible. NO pay of any kind. Ordered by name. */
+    async listEntriesPeople() {
+      const rows = await store.listEntriesPeople();
+      return rows.map((r) => ({ teacherId: r.teacherId, name: r.name, meritEligible: r.meritEligible })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.teacherId < b.teacherId ? -1 : 1));
+    },
+
+    /**
+     * TASK-880 / SPEC-102 E1 - a coach reads ONLY their own slip. The slip is resolved by the TOKEN's teacherId (the route passes it; there is no
+     * id the caller can supply). No period or no slip for the month => `{ slip: null }` (200); the FE shows "no slip yet".
+     */
+    async mySlip(teacherId: string, year: number, month: number) {
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) throw badRequest("year must be 2000-2100");
+      if (!Number.isInteger(month) || month < 1 || month > 12) throw badRequest("month must be 1-12");
+      const found = await store.getPeriodByYearMonth(year, month);
+      if (!found) return { slip: null };
+      const period = await fresh(found);
+      const slip = (await store.listSlips(period.id)).find((s) => s.teacherId === teacherId);
+      if (!slip) return { slip: null };
+      const lines = await store.listLines(slip.id);
+      const teacherName = (await store.teacherNames([teacherId])).get(teacherId) ?? null;
+      const p = periodDTO(period);
+      return {
+        period: { year: p.year, month: p.month, periodStart: p.periodStart, periodEnd: p.periodEnd, lockAt: p.lockAt, status: p.status },
+        teacherId,
+        teacherName,
+        baseAmount: slip.baseSatang,
+        lines: lines.map((l) => ({ id: l.id, kind: l.kind, kindLabel: KIND_LABEL[l.kind], classType: l.classType ?? null, label: l.label, amountSatang: l.amountSatang })),
+        total: slip.baseSatang + lines.reduce((s, l) => s + l.amountSatang, 0),
+        status: slip.status,
+      };
+    },
+
+    /**
+     * TASK-880 / SPEC-102 E2 - the ADMIN-BLIND entry: add ONE merit / other line to a coach's slip for a period, finding or creating that slip.
+     * The returned value is the created line ONLY - never a total, the base, another line or another coach (the blind contract; this return
+     * is its single enforcement point). The period must already exist (an admin never creates one).
+     */
+    async addEntry(input: { teacherId: string; year: number; month: number; kind: string; amountSatang: number; label?: string; reason?: string }, actor: string) {
+      if (input.kind !== "merit" && input.kind !== "other") throw new ApiException(400, "KIND_NOT_ALLOWED", "kind must be merit or other");
+      if (!Number.isSafeInteger(input.amountSatang) || input.amountSatang === 0) throw badRequest("amountSatang must be a non-zero integer (satang)");
+      if (input.kind === "merit" && input.amountSatang < 0) throw badRequest("merit must be positive");
+      const label = (input.label ?? "").trim();
+      const reason = (input.reason ?? "").trim();
+      if (label.length > 200 || reason.length > 500) throw badRequest("label / reason too long");
+      if (input.kind === "other" && !reason) throw badRequest("ต้องระบุเหตุผล");
+      const found = await store.getPeriodByYearMonth(input.year, input.month);
+      if (!found) throw notFound("ไม่พบงวดเงินเดือน");
+      const period = await fresh(found);
+      if (period.status === "locked") throw locked();
+      const profile = await store.getProfile(input.teacherId);
+      if (!profile) throw notFound("ไม่พบโปรไฟล์");
+      if (input.kind === "merit" && !profile.meritEligible) throw new ApiException(422, "NOT_MERIT_ELIGIBLE", "this person is not merit-eligible");
+      let slip = (await store.listSlips(period.id)).find((s) => s.teacherId === input.teacherId);
+      if (!slip) {
+        await store.upsertDraftSlip(period.id, input.teacherId, profile.baseSatang ?? 0);
+        slip = (await store.listSlips(period.id)).find((s) => s.teacherId === input.teacherId)!;
+      }
+      if (slip.status === "locked") throw locked();
+      const text = input.kind === "other" ? (label ? `${label} (${reason})` : reason) : label || reason || "Merit";
+      const created = await store.insertLine({ slipId: slip.id, kind: input.kind, label: text, amountSatang: input.amountSatang, source: "manual", createdBy: actor, sourceRef: null });
+      // 🔻 TASK-920: an admin-entered `other` line notifies (Merit is not a notification type). The admin-blind response is unchanged unless the notification failed.
+      let nf = 0;
+      if (input.kind === "other") {
+        const day = bangkokDate(now());
+        nf = (await fire(deps.notify, { type: "Other", text: payLineText("Other", await coachName(slip.teacherId), day, otherDetail(reason)), occurredOn: day, key: manualLineKey(created.id) })).failed;
+      }
+      return { lineId: created.id, kind: created.kind, kindLabel: KIND_LABEL[created.kind], label: created.label, amountSatang: created.amountSatang, ...(nf ? { notifyFailed: nf } : {}) };
     },
 
     /** Merit (R1.2): a typed positive amount (integer satang), only for a profile with `merit_eligible`. No auto compute. */
@@ -190,14 +276,25 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
     },
 
     /** The month overview. */
-    async getPeriod(id: string) {
+    // TASK-883: also `missingRates` - the FL-rate gaps runPeriod warns about, computed READ-ONLY here so they are always true, not "as of the last Run".
+    // Cost: one reader call + one rates read per active FT/PT/FL profile on every overview read (fine for the demo; a cache is out of scope).
+    async getPeriod(id: string, opts: { missingRates?: boolean } = {}) {
       const period = await periodOrThrow(id);
       const slips = await store.listSlips(period.id);
       const sums = await store.sumLinesByPeriod(period.id);
       const names = await store.teacherNames(slips.map((s) => s.teacherId));
+      const missingRates: { teacherId: string; date: string; classType: ClassType; problem: "no_fl_rate" }[] = [];
+      if (opts.missingRates !== false && period.periodStart && period.periodEnd) {
+        for (const p of (await store.listProfiles()).filter((x) => x.active && ["FT", "PT", "FL"].includes(x.employmentType))) {
+          const rates: Partial<Record<ClassType, number>> = Object.fromEntries((await store.listFlRates(p.teacherId)).map((x) => [x.classType, x.rateSatang]));
+          const days = await deps.readHours(p.teacherId, period.periodStart, period.periodEnd);
+          for (const m of flPayLines(p, rates, days).missingRates) missingRates.push({ teacherId: p.teacherId, date: m.date, classType: m.classType, problem: "no_fl_rate" });
+        }
+      }
       return {
         period: periodDTO(period),
         slips: slips.map((s) => ({ id: s.id, teacherId: s.teacherId, teacherName: names.get(s.teacherId) ?? null, baseAmount: s.baseSatang, total: s.baseSatang + (sums.get(s.id) ?? 0), status: s.status })),
+        missingRates,
       };
     },
 
@@ -216,7 +313,11 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       if (!Number.isSafeInteger(input.amount) || input.amount === 0) throw badRequest("amount must be a non-zero integer (satang, may be negative)");
       const { slip, period } = await slipOrThrow(slipId);
       if (period.status === "locked" || slip.status === "locked") throw locked();
-      return lineDTO(await store.insertLine({ slipId: slip.id, kind: "other", label, amountSatang: input.amount, source: "manual", createdBy: actor }));
+      const line = await store.insertLine({ slipId: slip.id, kind: "other", label, amountSatang: input.amount, source: "manual", createdBy: actor });
+      // 🔻 TASK-920: an "Other" item: the reason as typed unless it could hold money (then "Other item"); never the amount.
+      const day = bangkokDate(now());
+      const nf = (await fire(deps.notify, { type: "Other", text: payLineText("Other", await coachName(slip.teacherId), day, otherDetail(label)), occurredOn: day, key: manualLineKey(line.id) })).failed;
+      return { ...lineDTO(line), ...(nf ? { notifyFailed: nf } : {}) };
     },
 
     async removeLine(slipId: string, lineId: string) {
@@ -235,8 +336,8 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
 
     /** CSV, one row per slip: teacher_id, base_salary, total, status — baht with 2 decimals. Reads still work when locked. */
     async exportCsv(id: string) {
-      const overview = await this.getPeriod(id);
-      const rows = overview.slips.map((s) => [s.teacherId, csvCell(s.teacherName ?? ""), numericFromSatang(s.baseAmount), numericFromSatang(s.total), s.status].join(","));
+      const overview = await this.getPeriod(id, { missingRates: false });
+      const rows = overview.slips.map((s) => [s.teacherId, csvCell(formulaSafe(s.teacherName ?? "")), numericFromSatang(s.baseAmount), numericFromSatang(s.total), s.status].join(","));
       const { year, month } = overview.period;
       return { filename: `salary-${year}-${String(month).padStart(2, "0")}.csv`, body: ["teacher_id,teacher_name,base_salary,total,status", ...rows].join("\r\n") + "\r\n" };
     },

@@ -52,6 +52,10 @@ export interface AutoLine {
   sourceRef: string;
   label: string;
   amountSatang: number;
+  /** 🔻 TASK-903 - set on `fl_pay` lines only (one line per date x class type); absent for every other kind. */
+  classType?: ClassType;
+  /** 🔻 TASK-920: set on `extra_hour` lines (that day's extra minutes), so a notification can say "2 Hr" without parsing the label (which carries the rate). */
+  extraMinutes?: number;
 }
 
 /**
@@ -62,10 +66,9 @@ export interface AutoLine {
 export function flPayLines(profile: HasRoles, ratesSatang: Partial<Record<ClassType, number>>, days: readonly HoursDay[]): { lines: AutoLine[]; missingRates: { date: string; classType: ClassType }[] } {
   const lines: AutoLine[] = [];
   const missingRates: { date: string; classType: ClassType }[] = [];
+  // 🔻 TASK-903 - ONE line per (FL date x class type), each rounded once at its own line, so the slip / export can group by class type.
   for (const d of days) {
     if (roleOfDay(profile, d.date) !== "FL") continue;
-    let numerator = 0;
-    const parts: string[] = [];
     for (const c of CLASS_ORDER) {
       const min = d.byType[c] ?? 0;
       if (min <= 0) continue;
@@ -74,13 +77,10 @@ export function flPayLines(profile: HasRoles, ratesSatang: Partial<Record<ClassT
         missingRates.push({ date: d.date, classType: c });
         continue;
       }
-      numerator += min * rate;
-      parts.push(`${c} ${hours(min)} Hr × ${baht(rate)}`);
+      const amount = payForMinutes(min, rate);
+      if (amount === 0) continue; // a 0-rate class earns nothing: no line
+      lines.push({ kind: "fl_pay", classType: c, sourceRef: `fl:${d.date}:${c}`, label: `${ddmm(d.date)} (${dow(d.date)}): ${c} ${hours(min)} Hr × ${baht(rate)}`, amountSatang: amount });
     }
-    if (!parts.length) continue;
-    const amount = roundDiv(numerator, 60);
-    if (amount === 0) continue; // a 0-rate day earns nothing: no line
-    lines.push({ kind: "fl_pay", sourceRef: `fl:${d.date}`, label: `${ddmm(d.date)} (${dow(d.date)}): ${parts.join(", ")}`, amountSatang: amount });
   }
   return { lines, missingRates };
 }
@@ -103,6 +103,7 @@ export function extraHourLines(profile: HasRoles, days: readonly HoursDay[]): Au
       sourceRef: `eh:${d.date}`,
       label: `${ddmm(d.date)} (${dow(d.date)}): ${hours(d.teachingMinutesTotal)} Hr → extra ${hours(extra)} Hr × ${baht(EXTRA_HOUR_RATE_SATANG)}`,
       amountSatang: payForMinutes(extra, EXTRA_HOUR_RATE_SATANG),
+      extraMinutes: extra,
     });
   }
   return lines;

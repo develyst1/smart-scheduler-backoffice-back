@@ -1,16 +1,29 @@
 // SPEC-098 §3 / TASK-858 — the revenue ledger's reads and writes. (`revenue.service.ts` is the OLD REQ-014 report
 // and is not touched.) Aggregation happens in SQL; nothing loads a year into memory.
-import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { boMovement } from "../db/schema";
 import { boPayment, boRevenueCategory, boRevenueLine } from "../db/schema-revenue";
-import { badRequest, conflict, notFound, pgErrorCode } from "../lib/http";
+import { ttBookings, ttCoursePackages, ttStudents, ttVouchers } from "../db/pub-timetable"; // 🔻 TASK-893 (read-only `public`)
+import { callRefundCancel } from "./refund-cancel-client"; // 🔻 TASK-893
+import { ApiException, badRequest, conflict, notFound, pgErrorCode } from "../lib/http";
 import {
+  bangkokDate,
   buildBlock,
+  ECA_TERM_MAX,
+  ecaAmountMinor,
+  ecaRemark,
   feeFromMovements,
+  escapeLike,
   feeKeys,
   followsRevenueLine,
   installmentsFit,
+  planLabel,
+  refundAmountMinor,
+  refundKeyFor,
+  REFUND_SOURCES_LIMIT,
+  refundWithinFee,
+  sessionCounts,
   paymentTotals,
   REVENUE_TYPES,
   revenueLineKeyFor,
@@ -132,13 +145,58 @@ export async function createManualLine(
   return toLineDTO(row, cat.name);
 }
 
+/**
+ * TASK-890 (R2.2) — ONE ECA payment = ONE revenue line: `type ECA`, the school (an ECA category) as its category, the TERM as the product
+ * name, `price × students × classes` as the amount, counted on the day the school PAID. A manual entry (`idempotency_key` NULL, like
+ * `createManualLine`); `source = 'ECA'`. `d` is injectable only so the rules are testable without a connection.
+ */
+export async function createEcaPayment(
+  input: {
+    categoryId: string;
+    term: string;
+    pricePerClassMinor: number;
+    students: number;
+    classesPerTerm: number;
+    paidOn: string;
+    branch: "BRAVO" | "OTHER";
+    method: "TRANSFER" | "CASH" | "CARD";
+  },
+  actor: string | null,
+  d: any = db,
+): Promise<RevenueLineDTO> {
+  const term = input.term.trim();
+  if (!term || term.length > ECA_TERM_MAX) throw badRequest(`term must be 1–${ECA_TERM_MAX} characters`, { field: "term" });
+  const [cat] = await d.select().from(boRevenueCategory).where(eq(boRevenueCategory.id, input.categoryId)).limit(1);
+  if (!cat || !cat.active) throw badRequest("categoryId is unknown or inactive", { field: "categoryId" });
+  if (cat.type !== "ECA") throw badRequest("categoryId is not an ECA school", { field: "categoryId" });
+  const amountMinor = ecaAmountMinor(input.pricePerClassMinor, input.students, input.classesPerTerm);
+  if (amountMinor === null) throw badRequest("the total (price × students × classes) is too large", { field: "amount" });
+  const [row] = await d
+    .insert(boRevenueLine)
+    .values({
+      occurredOn: input.paidOn,
+      branch: input.branch,
+      type: "ECA",
+      categoryId: cat.id,
+      productName: term,
+      amountMinor,
+      method: input.method,
+      remark: ecaRemark(input.pricePerClassMinor, input.students, input.classesPerTerm),
+      source: "ECA",
+      idempotencyKey: null,
+      actor,
+    })
+    .returning();
+  return toLineDTO(row, cat.name);
+}
+
 export async function listLines(f: {
   from: string;
   to: string;
   branch?: string;
   type?: string;
   categoryId?: string;
-}) {
+}, d: any = db /* TASK-890: injectable so a rolled-back proof can read back its own uncommitted line */) {
   // ONE filter for the list and the totals, so the totals are always the sum of exactly the lines returned.
   const where = and(
     gte(boRevenueLine.occurredOn, f.from),
@@ -148,7 +206,7 @@ export async function listLines(f: {
     f.categoryId ? eq(boRevenueLine.categoryId, f.categoryId) : undefined,
   );
   const [rows, [agg]] = await Promise.all([
-    db
+    d
       .select({ line: boRevenueLine, categoryName: boRevenueCategory.name })
       .from(boRevenueLine)
       .leftJoin(boRevenueCategory, eq(boRevenueLine.categoryId, boRevenueCategory.id))
@@ -156,7 +214,7 @@ export async function listLines(f: {
       .orderBy(desc(boRevenueLine.occurredOn), desc(boRevenueLine.createdAt)),
     // SPEC-098 §3 (changed 2026-11-08): revenueMinor = non-REFUND lines, refundsMinor = REFUND lines (≤ 0), summed in SQL.
     // sum() over zero rows is NULL, hence coalesce; sum(integer) is bigint → string from postgres-js.
-    db
+    d
       .select({
         revenue: sql<string>`coalesce(sum(${boRevenueLine.amountMinor}) filter (where ${boRevenueLine.type} <> 'REFUND'), 0)`,
         refunds: sql<string>`coalesce(sum(${boRevenueLine.amountMinor}) filter (where ${boRevenueLine.type} = 'REFUND'), 0)`,
@@ -168,7 +226,7 @@ export async function listLines(f: {
   const refundsMinor = Number(agg?.refunds ?? 0);
   // totalMinor = revenueMinor + refundsMinor: the sum of the returned lines, refunds included.
   return {
-    lines: rows.map((r) => toLineDTO(r.line, r.categoryName)),
+    lines: rows.map((r: { line: typeof boRevenueLine.$inferSelect; categoryName: string | null }) => toLineDTO(r.line, r.categoryName)),
     totalMinor: revenueMinor + refundsMinor,
     revenueMinor,
     refundsMinor,
@@ -336,4 +394,150 @@ export async function updatePayment(
     }
     return toPaymentDTO(row);
   });
+}
+
+// ───────────────────────────────── the refund (SPEC-099 §10, TASK-893) ─────────────────────────────────
+
+export type RefundSourceDTO = {
+  refType: PaymentRefType;
+  refId: string;
+  label: string;
+  /** The Asia/Bangkok date it was sold. */
+  soldOn: string;
+  /** The sale's net (the TASK-874 fee); `null` when no sale movement was posted (such a plan cannot be refunded here: NO_FEE). */
+  feeMinor: number | null;
+  attended: number;
+  toCancel: number;
+  refunded: boolean;
+};
+
+/**
+ * `GET /refunds/sources?q=`: up to 20 of the latest courses and vouchers whose student's nickname or name contains `q` (case-insensitive;
+ * LIKE characters in `q` are literals; empty `q` = the latest). Personal data stays inside this CEO-only route. `d` / `today` are injectable for tests.
+ */
+export async function listRefundSources(q: string, d: any = db, today: string = bangkokDate(new Date())): Promise<{ sources: RefundSourceDTO[] }> {
+  const text = q.trim();
+  const like = `%${escapeLike(text)}%`;
+  const match = text ? or(ilike(ttStudents.name, like), ilike(ttStudents.nickname, like)) : undefined;
+  const [courses, vouchers]: [any[], any[]] = await Promise.all([
+    d
+      .select({ id: ttCoursePackages.id, size: ttCoursePackages.size, createdAt: ttCoursePackages.createdAt, endedAt: ttCoursePackages.endedAt, nickname: ttStudents.nickname, name: ttStudents.name })
+      .from(ttCoursePackages)
+      .leftJoin(ttStudents, eq(ttCoursePackages.studentId, ttStudents.id))
+      .where(match)
+      .orderBy(desc(ttCoursePackages.createdAt))
+      .limit(REFUND_SOURCES_LIMIT),
+    d
+      .select({ id: ttVouchers.id, size: ttVouchers.totalHours, createdAt: ttVouchers.createdAt, endedAt: ttVouchers.endedAt, nickname: ttStudents.nickname, name: ttStudents.name })
+      .from(ttVouchers)
+      .leftJoin(ttStudents, eq(ttVouchers.studentId, ttStudents.id))
+      .where(match)
+      .orderBy(desc(ttVouchers.createdAt))
+      .limit(REFUND_SOURCES_LIMIT),
+  ]);
+  const plans = [
+    ...courses.map((r) => ({ refType: "COURSE" as const, ...r })),
+    ...vouchers.map((r) => ({ refType: "VOUCHER" as const, ...r })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, REFUND_SOURCES_LIMIT);
+  if (!plans.length) return { sources: [] };
+
+  const courseIds = plans.filter((p) => p.refType === "COURSE").map((p) => p.id);
+  const voucherIds = plans.filter((p) => p.refType === "VOUCHER").map((p) => p.id);
+  const [sessions, movements, refundedRows]: [any[], any[], any[]] = await Promise.all([
+    d
+      .select({ courseId: ttBookings.courseId, voucherId: ttBookings.voucherId, status: ttBookings.status, date: ttBookings.date })
+      .from(ttBookings)
+      .where(or(courseIds.length ? inArray(ttBookings.courseId, courseIds) : undefined, voucherIds.length ? inArray(ttBookings.voucherId, voucherIds) : undefined)),
+    d
+      .select({ key: boMovement.idempotencyKey, valueMinor: boMovement.valueMinor })
+      .from(boMovement)
+      .where(inArray(boMovement.idempotencyKey, plans.flatMap((p) => Object.values(feeKeys(p.refType, p.id))))),
+    d
+      .select({ key: boRevenueLine.idempotencyKey })
+      .from(boRevenueLine)
+      .where(inArray(boRevenueLine.idempotencyKey, plans.map((p) => refundKeyFor(p.refType, p.id)))),
+  ]);
+  const refunded = new Set(refundedRows.map((r) => r.key));
+  return {
+    sources: plans.map((p) => {
+      const mine = sessions.filter((s) => (p.refType === "COURSE" ? s.courseId : s.voucherId) === p.id);
+      return {
+        refType: p.refType,
+        refId: p.id,
+        label: planLabel(p.refType, p.name ? { nickname: p.nickname, name: p.name } : null, p.size),
+        soldOn: bangkokDate(p.createdAt),
+        feeMinor: feeFromMovements(p.refType, p.id, movements),
+        ...sessionCounts(p.refType, mine, today, !!p.endedAt),
+        refunded: refunded.has(refundKeyFor(p.refType, p.id)),
+      };
+    }),
+  };
+}
+
+/**
+ * `POST /refunds`, in THIS order (a failure at a step writes nothing at the later ones):
+ *   1. the plan exists (404) · 2. it has a fee (409 NO_FEE) and `0 < amount <= fee` (400) · 3. not refunded yet (409 ALREADY_REFUNDED)
+ *   4. SB cancels the plan (`NOT_CONFIGURED` → 503, an SB failure / timeout → 502; nothing written) · 5. ONE REFUND line.
+ * A retry after a crash between 4 and 5 is safe: SB answers `alreadyCancelled`, and the line's key (`rl:refund:<type>:<id>`) makes it once. Two requests at
+ * once: both pass 3, both call SB (idempotent), ONE inserts and the other gets 409 from the key.
+ */
+export async function createRefund(
+  input: { refType: PaymentRefType; refId: string; refundedOn: string; amountMinor: number; method: "TRANSFER" | "CASH" | "CARD"; remark?: string },
+  actor: string | null,
+  deps: { d?: any; cancel?: typeof callRefundCancel } = {},
+): Promise<{ line: RevenueLineDTO; cancelledSessions: number }> {
+  const d = deps.d ?? db;
+  const cancel = deps.cancel ?? callRefundCancel;
+
+  // 1. the plan (its label goes on the line; an id that is not a plan is a 404, not a fee question)
+  const planTable = input.refType === "COURSE" ? ttCoursePackages : ttVouchers;
+  const sizeCol = input.refType === "COURSE" ? ttCoursePackages.size : ttVouchers.totalHours;
+  const [plan] = await d
+    .select({ id: planTable.id, size: sizeCol, nickname: ttStudents.nickname, name: ttStudents.name })
+    .from(planTable)
+    .leftJoin(ttStudents, eq(planTable.studentId, ttStudents.id))
+    .where(eq(planTable.id, input.refId))
+    .limit(1);
+  if (!plan) throw notFound(input.refType === "COURSE" ? "course not found" : "voucher not found");
+
+  // 2. the fee and the amount
+  const fee = await feeOf(d, input.refType, input.refId);
+  if (fee === null) throw conflict("NO_FEE", "this sale has no posted fee, so there is nothing to refund against");
+  if (!refundWithinFee(input.amountMinor, fee)) throw badRequest(`amountMinor must be between 1 and the sale's fee (${fee})`, { field: "amountMinor" });
+
+  // 3. once per sale
+  const key = refundKeyFor(input.refType, input.refId);
+  const [already] = await d.select({ id: boRevenueLine.id }).from(boRevenueLine).where(eq(boRevenueLine.idempotencyKey, key)).limit(1);
+  if (already) throw conflict("ALREADY_REFUNDED", "this sale was already refunded");
+
+  // 4. the scheduling side cancels the plan
+  const sb = await cancel({ refType: input.refType, refId: input.refId, actor });
+  if (sb === "NOT_CONFIGURED") throw new ApiException(503, "NOT_CONFIGURED", "the scheduling API is not configured (SCHEDULER_API_URL / SCHEDULER_INTERNAL_SECRET); nothing was refunded");
+  if (sb === "FAILED") throw new ApiException(502, "SCHEDULER_FAILED", "the scheduling API did not cancel the plan; nothing was refunded");
+
+  // 5. the line. It carries the branch of the sale's own line (F1), BRAVO when that line is not there.
+  const [sale] = await d.select({ branch: boRevenueLine.branch }).from(boRevenueLine).where(eq(boRevenueLine.idempotencyKey, revenueLineKeyFor(input.refType, input.refId))).limit(1);
+  const rows = await d
+    .insert(boRevenueLine)
+    .values({
+      occurredOn: input.refundedOn,
+      branch: sale?.branch === "OTHER" ? "OTHER" : "BRAVO",
+      type: "REFUND",
+      categoryId: null,
+      productName: `Refund: ${planLabel(input.refType, plan.name ? { nickname: plan.nickname, name: plan.name } : null, plan.size)}`,
+      amountMinor: refundAmountMinor(input.amountMinor),
+      method: input.method,
+      remark: input.remark?.trim() ? input.remark.trim() : null,
+      source: "REFUND",
+      refType: input.refType,
+      refId: input.refId,
+      idempotencyKey: key,
+      actor,
+    })
+    .onConflictDoNothing({ target: boRevenueLine.idempotencyKey })
+    .returning();
+  if (!rows.length) throw conflict("ALREADY_REFUNDED", "this sale was already refunded");
+  return { line: toLineDTO(rows[0], null), cancelledSessions: sb.cancelledSessions };
 }

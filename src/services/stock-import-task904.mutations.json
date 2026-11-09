@@ -1,0 +1,1103 @@
+{
+  "task": "TASK-904",
+  "proves": "src/services/stock-import.service.test.ts",
+  "tests": "src/services/stock-import.service.test.ts",
+  "note": "REQ-120 R3.4: P = the sheet parser, D = the diff, B = the batch, A = the apply plan, S = the import service, R = routes/auth/body, Q = the reads.",
+  "mutations": [
+    {
+      "id": "P1",
+      "what": "the Other balance is read instead of Bravo",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const label = low === \"bravo\" || low === \"other\" ? low : top;",
+              "to": "const label = low === \"bravo\" ? \"other\" : low === \"other\" ? \"bravo\" : top;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "what": "«Other» is no longer reported as not imported",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "notImported.push(\"Other (future branches)\"); otherCol = i; continue;",
+              "to": "otherCol = i; continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "what": "a duplicate Model code is accepted",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (codes.has(key)) errors.push(",
+              "to": "if (false) errors.push("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "what": "a negative / fractional balance is accepted",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const m = /^(\\d{1,9})(?:\\.0+)?$/.exec(s);",
+              "to": "const m = /^(-?\\d{1,9})(?:\\.\\d+)?$/.exec(s);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "what": "baht to satang goes through a float multiply",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "return Number(m[1]) * 100 + Number((m[2] ?? \"\").padEnd(2, \"0\") || \"0\");",
+              "to": "return Math.floor(Number(s) * 100);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "what": "a 3-decimal price is accepted",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const m = /^(\\d{1,9})(?:\\.(\\d{1,2}))?$/.exec(s);\n  if (!m) return null;\n  return Number(m[1]) * 100",
+              "to": "const m = /^(\\d{1,9})(?:\\.(\\d{1,3}))?$/.exec(s);\n  if (!m) return null;\n  return Number(m[1]) * 100"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P7",
+      "what": "an empty Model code row is skipped silently instead of refused",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (!model) { errors.push({ row: rowNo, column: \"Model Code\", message: \"Model Code ว่าง\" }); continue; }",
+              "to": "if (!model) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P10",
+      "what": "a Type-only row is an error again",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (!model && !name && ![\"bravo\", \"price\", \"note\", \"commission\"].some((c) => text(get(c as Col)) !== \"\")) { ignored++; continue; }",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P11",
+      "what": "a row with a balance and no code is silently ignored",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "![\"bravo\", \"price\", \"note\", \"commission\"].some(",
+              "to": "![].some("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P12",
+      "what": "the ignored rows are not reported",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (ignored) notImported.push(",
+              "to": "if (false) notImported.push("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P13",
+      "what": "a non-zero Other value is dropped without a flag",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const other = oRaw !== \"\" && !(wholeQty(oRaw) === 0) ? oRaw : null;",
+              "to": "const other = null;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P14",
+      "what": "a zero Other value is flagged",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const other = oRaw !== \"\" && !(wholeQty(oRaw) === 0) ? oRaw : null;",
+              "to": "const other = oRaw !== \"\" ? oRaw : null;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P15",
+      "what": "the flags are not returned",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "notImported: sheet.notImported, flags, batch",
+              "to": "notImported: sheet.notImported, flags: [], batch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P8",
+      "what": "the sheet row cap is gone",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (grid.length - start > MAX_SHEET_ROWS)",
+              "to": "if (false)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P9",
+      "what": "an empty Name is accepted",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (!name) errors.push(",
+              "to": "if (false) errors.push("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "what": "a changed balance is not a qty_change (always field_change)",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "kind: delta !== 0 ? \"qty_change\" : \"field_change\"",
+              "to": "kind: \"field_change\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "what": "the delta sign is reversed",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const delta = r.qty === null ? 0 : r.qty - before;",
+              "to": "const delta = r.qty === null ? 0 : before - r.qty;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D3",
+      "what": "a removed row is not listed",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "    entries.push({ model: p.model, kind: \"removed\",",
+              "to": "    if (false) entries.push({ model: p.model, kind: \"removed\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D4",
+      "what": "a new product's opening balance is ignored",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const qty = r.qty ?? 0;\n      entries.push({ model: r.model, kind: \"new\", itemId: null, name: r.name, before: null, after: { qty }, delta: qty, fields });",
+              "to": "const qty = 0;\n      entries.push({ model: r.model, kind: \"new\", itemId: null, name: r.name, before: null, after: { qty }, delta: qty, fields });"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D5",
+      "what": "matching is case-sensitive",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const p = byModel.get(r.model.toLowerCase());",
+              "to": "const p = byModel.get(r.model);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D6",
+      "what": "a blank balance zeroes the stock",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const delta = r.qty === null ? 0 : r.qty - before;",
+              "to": "const delta = (r.qty ?? 0) - before;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D7",
+      "what": "unchanged rows are listed as changes",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (delta === 0 && !fields.length) { unchanged++; continue; }",
+              "to": "if (false) { unchanged++; continue; }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D8",
+      "what": "a name change is not noticed",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (!same(p.name, r.name)) fields.push({ field: \"name\", before: p.name, after: r.name });",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "what": "the batch ignores the delta (a changed diff keeps its batch)",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "d: e.delta, f:",
+              "to": "f:"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "what": "the batch depends on entry order",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "    .sort((a, b) => (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))\n    .map((e) => ({ m: e.model,",
+              "to": "    .map((e) => ({ m: e.model,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A1",
+      "what": "a negative resulting balance is allowed",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (resulting < 0) throw",
+              "to": "if (false) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "a stale balance is not detected",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if ((e.before?.qty ?? null) !== (p.qty ?? null)) throw",
+              "to": "if (false) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "a duplicate model in the confirmed set is allowed",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (seen.has(key)) throw",
+              "to": "if (false) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "a removed entry is acted on (counted as a change)",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const acted = entries.filter((e) => e.kind !== \"removed\");",
+              "to": "const acted = entries;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "the movement key drops the batch",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "export const movementKey = (batch: string, model: string) => `stock-import:${batch}:${model}`;",
+              "to": "export const movementKey = (batch: string, model: string) => `stock-import:${model}`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "a new product that already exists is overwritten instead of refused",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (p) throw new StockImportRefusal(\"STALE\", `«${e.model}» มีในระบบแล้ว",
+              "to": "if (false) throw new StockImportRefusal(\"STALE\", `«${e.model}» มีในระบบแล้ว"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "what": "the already-applied check is gone (a re-apply double-writes)",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (await tx.batchApplied(batch)) return {",
+              "to": "if (false) return {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "what": "the movement is not written for a delta",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (mv) { await tx.addMovement(p.id, {",
+              "to": "if (false) { await tx.addMovement(p.id, {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "what": "the new product's opening movement is not written",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (mv) { await tx.addMovement(id, {",
+              "to": "if (false) { await tx.addMovement(id, {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "what": "a field edit is not written",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (e.fields.length || patch.revenueCategoryId) { await tx.updateProduct(p.id, patch); if (e.fields.length) edited++; }",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "what": "the stale/negative refusal is turned into a generic 500",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "throw conflict(e.code, e.message);",
+              "to": "throw e;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "what": "a bad sheet is not a 400",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "    if (sheet.errors.length) throw badRequest(`ไฟล์มี ${sheet.errors.length} จุดที่ไม่ถูกต้อง`, { errors: sheet.errors.slice(0, 100), total: sheet.errors.length });\n    const current = await store.products();",
+              "to": "    const current = await store.products();"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "what": "the preview writes to the database",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "    staging.put(d.batch, d.entries);",
+              "to": "    staging.put(d.batch, d.entries); await store.transaction(async () => {});"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "what": "the upload size cap is gone",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (bytes.byteLength > MAX_UPLOAD_BYTES) throw badRequest(\"ไฟล์ใหญ่เกิน 5 MB\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "what": "the zip magic check is gone",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw badRequest(\"ไฟล์ต้องเป็น .xlsx\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "what": "the Demo tab is read instead of Balance Stock",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "wb.worksheets.find((s) => /balance/i.test(s.name)) ?? wb.worksheets[0]",
+              "to": "wb.worksheets[wb.worksheets.length - 1]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "what": "a stock movement carries a P&L value",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "valueMinor: 0,",
+              "to": "valueMinor: m.qty,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S14",
+      "what": "a new product is an EXPENSE, not INCOME",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "direction: \"INCOME\"",
+              "to": "direction: \"EXPENSE\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S15",
+      "what": "a new product gets a ceiling",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "ceilingQty: null, remainingQty: 0,",
+              "to": "ceilingQty: 0, remainingQty: 0,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "what": "the product read does not lock",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "(lock ? await q.for(\"update\") : await q)",
+              "to": "(await q)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S17",
+      "what": "the product read takes every item, not only stock ones",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "const q = exec.select().from(boItem).where(eq(boItem.externalSource, STOCK_SOURCE));",
+              "to": "const q = exec.select().from(boItem);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R1",
+      "what": "the import is open to admins",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/import/apply\", requireRole(\"ceo\"),",
+              "to": ".post(\"/import/apply\", adminAuth,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "what": "the preview is open to admins",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/import/preview\", requireRole(\"ceo\"),",
+              "to": ".post(\"/import/preview\", adminAuth,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "what": "the products read has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/products\", adminAuth, zValidator",
+              "to": ".get(\"/products\", zValidator"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "what": "the movement report has no auth",
+      "files": [
+        {
+          "file": "src/routes/bo.ts",
+          "edits": [
+            {
+              "from": "\"/stock/movements\",\n    adminAuth,",
+              "to": "\"/stock/movements\",\n    async (_c: any, n: any) => n(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R5",
+      "what": "the stock router is not mounted",
+      "files": [
+        {
+          "file": "src/routes/api.ts",
+          "edits": [
+            {
+              "from": "  .route(\"/stock\", stockRoutes)\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N1",
+      "what": "the NEGATIVE refusal reports the wrong resulting balance",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "model, name, resulting);",
+              "to": "model, name, current);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N2",
+      "what": "a special catch body comes back in the apply route",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "c.json(await stockImportService.apply(c.req.valid(\"json\").batchId)),\n  );",
+              "to": "(async () => { try { return c.json(await stockImportService.apply(c.req.valid(\"json\").batchId)); } catch (e) { throw e; } })(),\n  );"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N3",
+      "what": "a preview is kept for 5 hours, not 30 minutes",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "ttlMs = 30 * 60_000",
+              "to": "ttlMs = 300 * 60_000"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N4",
+      "what": "the staging has no cap",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "while (m.size > cap) m.delete(",
+              "to": "while (false) m.delete("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N5",
+      "what": "an unknown batch is not a 404 (it applies nothing silently)",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (!staged) throw new ApiException(404, \"BATCH_NOT_FOUND\",",
+              "to": "if (!staged) return { batchId: batch, movementsWritten: 0, itemsAdded: 0, fieldEdits: 0, removedLeft: 0 }; throw new ApiException(404, \"BATCH_NOT_FOUND\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N6",
+      "what": "an expired batch that was applied no longer answers alreadyApplied",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "const batch = staged ? batchOf(entries) : batchId;",
+              "to": "const batch = batchOf(entries);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N7",
+      "what": "the preview does not stage",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "staging.put(d.batch, d.entries);",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N8",
+      "what": "the preview row loses the balance",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "if (e.delta !== 0 || e.kind === \"new\") { before.quantity = e.before?.qty ?? null; after.quantity = e.after?.qty ?? null; }",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N9",
+      "what": "a removed row's before drops its balance",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "before.name = e.name; before.quantity = e.before?.qty ?? null;",
+              "to": "before.name = e.name;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N10",
+      "what": "apply reads the batch id from anywhere (the body accepts non-hex)",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "z.string().regex(/^[0-9a-f]{32}$/)",
+              "to": "z.string()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N11",
+      "what": "the apply result drops the fieldEdits count",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "fieldEdits: edited, removedLeft",
+              "to": "fieldEdits: 0, removedLeft"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N12",
+      "what": "a new product's opening movement is not counted",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "created++;\n              if (mv) { await tx.addMovement(id, { qty: mv.qty, remainingAfter: mv.qty, reason: mv.reason, idempotencyKey: mv.idempotencyKey, batch }); wrote++; }",
+              "to": "created++;\n              if (mv) { await tx.addMovement(id, { qty: mv.qty, remainingAfter: mv.qty, reason: mv.reason, idempotencyKey: mv.idempotencyKey, batch }); }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q1",
+      "what": "a Sale is typed as Stock in",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "return m.qty < 0 ? \"SALE\" : \"STOCK_IN\";",
+              "to": "return \"STOCK_IN\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q2",
+      "what": "an import is typed as a Sale/Stock in",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "const ADJUSTMENT_REFS = new Set([\"STOCK_IMPORT\", \"STOCK_OPENING\", \"ADJUSTMENT\", \"RESET\", \"TOPUP\"]);",
+              "to": "const ADJUSTMENT_REFS = new Set([\"STOCK_OPENING\", \"ADJUSTMENT\", \"RESET\", \"TOPUP\"]);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q3",
+      "what": "FROM_DEMO is not recognised",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "if (ref === \"FROM_DEMO\") return \"FROM_DEMO\";",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q4",
+      "what": "a non-real date passes the window check",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "return new Date(t).toISOString().slice(0, 10) === d ? t : null;",
+              "to": "return t;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q5",
+      "what": "the window is cut at UTC midnight, not Bangkok",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "  const OFFSET = 7 * 3_600_000;",
+              "to": "  const OFFSET = 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q6",
+      "what": "the report's to is exclusive",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "end: new Date(b + 86_400_000 - OFFSET)",
+              "to": "end: new Date(b - OFFSET)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q7",
+      "what": "LIKE wildcards are not escaped",
+      "files": [
+        {
+          "file": "src/lib/stock-read.ts",
+          "edits": [
+            {
+              "from": "s.replace(/[\\\\%_]/g, (c) => `\\\\${c}`)",
+              "to": "s"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q8",
+      "what": "the 366-day cap is gone",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q9",
+      "what": "the movement report returns the money value",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "qty: r.qty, remainingAfter: r.remainingAfter }))",
+              "to": "qty: r.qty, remainingAfter: r.remainingAfter, valueMinor: 0 }))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q10",
+      "what": "the movement report reads every item, not stock products",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "        eq(boItem.externalSource, STOCK_SOURCE), // stock products only",
+              "to": "        sql`true`, // stock products only"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

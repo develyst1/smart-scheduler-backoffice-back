@@ -199,21 +199,43 @@ export function isRenewalPair(kind: PurchaseKind, prevKind: PurchaseKind, rules:
 const byDateThenId = (a: { date: string; purchaseId: string }, b: { date: string; purchaseId: string }): number =>
   a.date < b.date ? -1 : a.date > b.date ? 1 : a.purchaseId < b.purchaseId ? -1 : a.purchaseId > b.purchaseId ? 1 : 0;
 
-const inMonth = (createdAt: Date | string, month: string | undefined): boolean => !month || bangkokMonthOf(createdAt) === month;
+// 🔻 TASK-867 rework (DECISIONS row 18, R1.4): a candidate window is EITHER a Bangkok month (`YYYY-MM`, the TASK-863 form,
+// kept for old callers) OR an inclusive Bangkok DATE range `{ from, to }` — the pay period `periodStart..periodEnd`.
+export type DateRange = { from: string; to: string };
+export type BonusWindow = string | DateRange;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isRealDate = (s: string): boolean => DATE_RE.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+
+/** `[start, end)` as instants for either form. Throws on a bad month, a bad date, or `from > to`. */
+export function windowBounds(w: BonusWindow): { start: Date; end: Date } {
+  if (typeof w === "string") return monthWindow(w);
+  if (!w || !isRealDate(w.from) || !isRealDate(w.to)) throw new Error(`range must be { from, to } as YYYY-MM-DD, got ${JSON.stringify(w)}`);
+  if (w.from > w.to) throw new Error(`range from ${w.from} is after to ${w.to}`);
+  const next = new Date(new Date(`${w.to}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+  return { start: new Date(`${w.from}T00:00:00+07:00`), end: new Date(`${next}T00:00:00+07:00`) };
+}
+
+const inWindow = (createdAt: Date | string, w: BonusWindow | undefined): boolean => {
+  if (w === undefined) return true;
+  if (typeof w === "string") return bangkokMonthOf(createdAt) === w;
+  const d = bangkokDateOf(createdAt);
+  return d >= w.from && d <= w.to;
+};
 
 /**
  * Bonus 50 candidates: a purchase that converted a 1st Trial. Goes to the trial's coach.
  * With a go-live date set: the purchase must be on or after it, and a trial before it only counts when
  * `bonus50TrialBeforeGoLive` is on. Pass `month` (`YYYY-MM`, Bangkok) to keep only that month's purchases.
  */
-export function bonus50Candidates(rows: readonly PurchaseRow[], rules: BonusRules = DEFAULT_RULES, month?: string): Bonus50Candidate[] {
+export function bonus50Candidates(rows: readonly PurchaseRow[], rules: BonusRules = DEFAULT_RULES, month?: BonusWindow): Bonus50Candidate[] {
   const out: Bonus50Candidate[] = [];
   for (const r of rows) {
     if (!r.trial) continue;
     // The system teacher ("No Teacher", `is_system`) only ever sits on park-fee OTHER blocks, never on a trial; this makes
     // that impossible BY CONSTRUCTION: a trial coached by it is not a candidate (relayed rule, Silver via Porter).
     if (r.trial.coachIsSystem) continue;
-    if (!inMonth(r.createdAt, month)) continue;
+    if (!inWindow(r.createdAt, month)) continue;
     const date = bangkokDateOf(r.createdAt);
     if (rules.goLiveDate) {
       if (date < rules.goLiveDate) continue;
@@ -241,12 +263,12 @@ export function bonus50Candidates(rows: readonly PurchaseRow[], rules: BonusRule
  * With a go-live date set: the renewal must be on or after it, and an old entitlement from before it only counts when
  * `bonus100OldCourseBeforeGoLive` is on (1A) — off is 1B.
  */
-export function bonus100Candidates(rows: readonly PurchaseRow[], rules: BonusRules = DEFAULT_RULES, month?: string): Bonus100Candidate[] {
+export function bonus100Candidates(rows: readonly PurchaseRow[], rules: BonusRules = DEFAULT_RULES, month?: BonusWindow): Bonus100Candidate[] {
   const out: Bonus100Candidate[] = [];
   for (const r of rows) {
     const prev = r.prev;
     if (!prev) continue;
-    if (!inMonth(r.createdAt, month)) continue;
+    if (!inWindow(r.createdAt, month)) continue;
     if (!isRenewalPair(r.kind, prev.kind, rules)) continue;
     const date = bangkokDateOf(r.createdAt);
     const prevDate = bangkokDateOf(prev.createdAt);

@@ -4,12 +4,16 @@ import { teacherSyncRoutes } from "./teacher-sync";
 import { ApiException } from "../lib/http";
 
 const savedSvc = process.env.SERVICE_TOKEN;
+const savedSkip = process.env.SKIP_ADMIN_AUTH; // 🔻 TASK-890: serviceAuth now honours the dev bypass, so this suite pins it OFF
 beforeAll(() => {
   process.env.SERVICE_TOKEN = "svc-token-xyz";
+  process.env.SKIP_ADMIN_AUTH = "false";
 });
 afterAll(() => {
   if (savedSvc === undefined) delete process.env.SERVICE_TOKEN;
   else process.env.SERVICE_TOKEN = savedSvc;
+  if (savedSkip === undefined) delete process.env.SKIP_ADMIN_AUTH;
+  else process.env.SKIP_ADMIN_AUTH = savedSkip;
 });
 
 function makeApp() {

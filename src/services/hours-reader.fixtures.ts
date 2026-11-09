@@ -22,11 +22,24 @@ export function row(over: Partial<TimetableRow> = {}): TimetableRow {
   };
 }
 
-const day = (date: string, byType: Partial<HoursDay["byType"]>): HoursDay => {
+const TYPES = ["private", "duo", "group", "eca", "camp"] as const;
+/**
+ * A day as the reader answers it. TASK-884: `names` is the expected `students` content per class type; a type with minutes and no
+ * entry here expects `names: []` (the TASK-872 fixtures carry no children, so they all expect that).
+ */
+const day = (date: string, byType: Partial<HoursDay["byType"]>, names: Partial<Record<(typeof TYPES)[number], string[]>> = {}): HoursDay => {
   const full = { private: 0, duo: 0, group: 0, eca: 0, camp: 0, ...byType };
-  return { date, byType: full, teachingMinutesTotal: full.private + full.duo + full.group + full.eca + full.camp };
+  return {
+    date,
+    byType: full,
+    teachingMinutesTotal: full.private + full.duo + full.group + full.eca + full.camp,
+    students: TYPES.filter((t) => full[t] > 0).map((classType) => ({ classType, names: names[classType] ?? [] })),
+  };
 };
 export { day };
+
+/** An invented child (the tests never use a real name). `nick` null ⇒ a child with no nickname. */
+export const kid = (id: string, name: string, nick: string | null = null) => ({ id, name, nickname: nick });
 
 export interface Fixture {
   name: string;

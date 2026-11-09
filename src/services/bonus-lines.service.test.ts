@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ApiException } from "../lib/http";
-import { DEFAULT_RULES, type Bonus100Candidate, type Bonus50Candidate } from "../lib/bonus-rules";
+import { DEFAULT_RULES, bonus50Candidates, type Bonus100Candidate, type Bonus50Candidate, type BonusWindow, type PurchaseRow } from "../lib/bonus-rules";
 import { boPaySlipLine } from "../db/schema";
 import {
   applyBonusLines,
@@ -271,19 +271,69 @@ describe("skips and refusals", () => {
     const w = await world();
     await rejects(w.run(cands([b50()]), DEFAULT_RULES, "00000000-0000-4000-8000-000000000000"), 404);
   });
-  test("the candidates are asked for the PERIOD'S month, with the rules passed through", async () => {
+  test("🔻 rework (DECISIONS row 18): the candidates are asked for the PERIOD'S R1.4 date range, not its calendar month, with the rules passed through", async () => {
     const w = await world();
     const seen: unknown[] = [];
     const rules = { ...DEFAULT_RULES, renewalAcrossCourseVoucher: true };
     await applyBonusLines(w.period.id, rules, "x", { salary: w.svc, profiles: w.store, lines: w.lines, candidates: async (m, r) => (seen.push([m, r]), cands()) });
-    expect(seen).toEqual([["2026-10", rules]]);
+    expect(seen).toEqual([[{ from: "2026-09-30", to: "2026-10-30" }, rules]]); // October = 30/9 – 30/10 (R1.4)
   });
-  test("a single-digit month is zero-padded: September asks for '2026-09', never '2026-9'", async () => {
-    const w = await world("2026-09-10T03:00:00Z");
-    const sept = await w.svc.createPeriod(2026, 9);
-    const seen: string[] = [];
-    await applyBonusLines(sept.id, DEFAULT_RULES, "x", { salary: w.svc, profiles: w.store, lines: w.lines, candidates: async (m) => (seen.push(m), cands()) });
-    expect(seen).toEqual(["2026-09"]);
+  test("September asks for 31/8 – 29/9 and November for 31/10 – 29/11", async () => {
+    const w = await world("2026-08-20T03:00:00Z");
+    const seen: unknown[] = [];
+    for (const m of [9, 11]) {
+      const p = await w.svc.createPeriod(2026, m);
+      await applyBonusLines(p.id, DEFAULT_RULES, "x", { salary: w.svc, profiles: w.store, lines: w.lines, candidates: async (win) => (seen.push(win), cands()) });
+    }
+    expect(seen).toEqual([{ from: "2026-08-31", to: "2026-09-29" }, { from: "2026-10-31", to: "2026-11-29" }]);
+  });
+  test("a period row with no dates is refused (400) before any read", async () => {
+    const w = await world();
+    const undated = { getPeriod: async (id: string) => { const o = await w.svc.getPeriod(id); return { ...o, period: { ...o.period, periodStart: null } }; } };
+    let asked = false;
+    await rejects(applyBonusLines(w.period.id, DEFAULT_RULES, "x", { salary: undated, profiles: w.store, lines: w.lines, candidates: async () => ((asked = true), cands()) }), 400);
+    expect(asked).toBe(false);
+  });
+
+  describe("which slip a purchase lands on — the REAL window filter, three periods (DECISIONS row 18)", () => {
+    // trial coach A (FT) on every purchase; the filter is the REAL `bonus50Candidates(rows, rules, window)` of TASK-863
+    const purchase = (id: string, createdAt: string): PurchaseRow => ({
+      kind: "COURSE", id, createdAt, isDuo: false, child: { id: `k-${id}`, name: "Nong", nickname: "N" },
+      trial: { bookingId: `t-${id}`, date: "2026-08-01", subject: "Skateboard", coachId: A }, prev: null,
+    });
+    const ROWS = [
+      purchase("p-0829", "2026-08-30T05:00:00Z"), // 30/8  → August's period (not tested here)
+      purchase("p-0829b", "2026-09-29T05:00:00Z"), // 29/9 → September (31/8–29/9)
+      purchase("p-0930", "2026-09-30T05:00:00Z"), // 30/9 → OCTOBER (30/9–30/10)
+      purchase("p-1030", "2026-10-30T05:00:00Z"), // 30/10 → October
+      purchase("p-1031", "2026-10-31T05:00:00Z"), // 31/10 → NOVEMBER (31/10–29/11)
+    ];
+    const real = async (win: unknown, rules: typeof DEFAULT_RULES): Promise<BonusCandidates> => ({
+      bonus50: bonus50Candidates(ROWS, rules, win as BonusWindow),
+      bonus100: [],
+    });
+    async function landed() {
+      const w = await world("2026-08-20T03:00:00Z");
+      const sept = await w.svc.createPeriod(2026, 9);
+      const nov = await w.svc.createPeriod(2026, 11);
+      for (const p of [sept, nov]) await w.svc.runPeriod(p.id);
+      const out: Record<string, string[]> = {};
+      for (const [name, id] of [["sept", sept.id], ["oct", w.period.id], ["nov", nov.id]] as const) {
+        await applyBonusLines(id, DEFAULT_RULES, "x", { salary: w.svc, profiles: w.store, lines: w.lines, candidates: real });
+        const slip = [...w.store.slips.values()].find((s) => s.periodId === id && s.teacherId === A)!;
+        out[name] = [...w.store.lines.values()].filter((l) => l.slipId === slip.id && l.kind === "bonus").map((l) => l.sourceRef!.split(":")[1]).sort();
+      }
+      return out;
+    }
+    test("29/9 → September · 30/9 and 30/10 → October · 31/10 → November", async () => {
+      expect(await landed()).toEqual({ sept: ["p-0829b"], oct: ["p-0930", "p-1030"], nov: ["p-1031"] });
+    });
+    test("no purchase is paid on two slips and none is lost between the periods", async () => {
+      const l = await landed();
+      const all = [...l.sept, ...l.oct, ...l.nov];
+      expect(new Set(all).size).toBe(all.length);
+      expect(all.sort()).toEqual(["p-0829b", "p-0930", "p-1030", "p-1031"]);
+    });
   });
 });
 

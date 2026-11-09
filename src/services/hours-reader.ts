@@ -26,6 +26,20 @@ export interface HoursDay {
   date: string;
   byType: Record<ClassType, number>;
   teachingMinutesTotal: number;
+  /**
+   * TASK-884 / SPEC-101 §5 R1.6 — WHO was taught that day, per class type: one entry per class type that has teaching that day
+   * (`byType[t] > 0`), in `CLASS_TYPES` order. LABELS ONLY: link 3 prints them, they never move money. `names` is one entry per
+   * child (nickname, else name; never joined), de-duplicated, ordered by the child's first lesson start that day, then by name. It is
+   * EMPTY for a type whose rows carry no child (a title-only ECA, the derived CAMP rows): never invented.
+   */
+  students: Array<{ classType: ClassType; names: string[] }>;
+}
+
+/** A child as the names need it (SB `students`: `id`, `name`, `nickname`). */
+export interface ChildRef {
+  id: string;
+  name: string;
+  nickname: string | null;
 }
 
 /** What `collectRows` returns: just the columns the rules read. */
@@ -40,6 +54,9 @@ export interface TimetableRow {
   otherKind: string | null;
   coStudentId: string | null;
   slotYieldedAt: Date | string | null;
+  /** TASK-884 — the row's child and a DUO row's second child, joined from `students`; absent/null ⇒ none. Names only; no rule reads them. */
+  student?: ChildRef | null;
+  coStudent?: ChildRef | null;
 }
 
 // ───────────────────────────────── the rules ─────────────────────────────────
@@ -147,17 +164,75 @@ const zeroByType = (): Record<ClassType, number> => ({ private: 0, duo: 0, group
  */
 export function bucketMinutes(rows: readonly TimetableRow[]): HoursDay[] {
   const byDate = new Map<string, Record<ClassType, number>>();
+  const kids = new Map<string, Map<ClassType, Map<string, KidSeen>>>(); // date → class type → child id → first start + label
   const live = liveGroupIds(rows);
+  const seatsOf = liveSeatsByGroup(rows);
   for (const r of rows) {
     const c = classifyRow(r, live);
-    if ("skipped" in c) continue;
+    if ("skipped" in c) continue; // a row that adds no minutes adds no name either
     const day = byDate.get(r.date) ?? zeroByType();
     day[c.type] += c.minutes;
     byDate.set(r.date, day);
+
+    const types = kids.get(r.date) ?? new Map<ClassType, Map<string, KidSeen>>();
+    const seen = types.get(c.type) ?? new Map<string, KidSeen>();
+    const start = secondsOf(r.startTime);
+    for (const child of childrenTaught(r, seatsOf)) {
+      const prior = seen.get(child.id);
+      if (!prior || start < prior.start) seen.set(child.id, { start, label: nameOf(child) });
+    }
+    types.set(c.type, seen);
+    kids.set(r.date, types);
   }
   return [...byDate.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([date, byType]) => ({ date, byType, teachingMinutesTotal: CLASS_TYPES.reduce((n, t) => n + byType[t], 0) }));
+    .map(([date, byType]) => ({
+      date,
+      byType,
+      teachingMinutesTotal: CLASS_TYPES.reduce((n, t) => n + byType[t], 0),
+      students: CLASS_TYPES.filter((t) => byType[t] > 0).map((classType) => ({
+        classType,
+        names: [...(kids.get(date)?.get(classType)?.values() ?? [])]
+          .sort((a, b) => (a.start === b.start ? compareText(a.label, b.label) : a.start < b.start ? -1 : 1))
+          .map((k) => k.label),
+      })),
+    }));
+}
+
+// ───────────────────────────────── the names (TASK-884 / R1.6) ─────────────────────────────────
+
+interface KidSeen {
+  start: number;
+  label: string;
+}
+
+/** One child's label, the way SB prints it (`studentNamesOf`, mappers.ts:194): the nickname, else the name. */
+export function nameOf(c: ChildRef): string {
+  return c.nickname?.trim() ? c.nickname.trim() : c.name.trim();
+}
+
+/** Code-point order, not locale order: the same input always gives the same output on every machine. */
+const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** group id → the LIVE seat rows of that group (a seat is live when its status is counted: the same rule as `liveGroupIds`). */
+function liveSeatsByGroup(rows: readonly TimetableRow[]): Map<string, TimetableRow[]> {
+  const out = new Map<string, TimetableRow[]>();
+  for (const r of rows) {
+    if (!r.groupId || !COUNTED_STATUSES.has(r.status)) continue;
+    out.set(r.groupId, [...(out.get(r.groupId) ?? []), r]);
+  }
+  return out;
+}
+
+/**
+ * The children a COUNTED row stands for. A GROUP row stands for the children of its LIVE seats — never its own `student_id` (the
+ * group's first child is also a seat, or not, but the GROUP row itself names nobody), never a dead seat. Every other counted
+ * row stands for its own child plus a DUO row's second child. A row that carries none (a title-only ECA, a derived CAMP row) stands
+ * for nobody: nothing is invented.
+ */
+export function childrenTaught(r: TimetableRow, seatsOf: ReadonlyMap<string, readonly TimetableRow[]>): ChildRef[] {
+  const own = (x: TimetableRow): ChildRef[] => [x.student, x.coStudent].filter((c): c is ChildRef => !!c);
+  return r.bookingType === "GROUP" ? (seatsOf.get(r.id) ?? []).flatMap(own) : own(r);
 }
 
 /**
@@ -195,8 +270,12 @@ const isRealDate = (s: string): boolean => {
 export async function collectRows(teacherId: string, start: string, end: string): Promise<TimetableRow[]> {
   // Lazy: the pure half of this file must be importable (and testable) with no database configured.
   const { and, eq, gte, inArray, lte, or, sql } = await import("drizzle-orm");
+  const { alias } = await import("drizzle-orm/pg-core");
   const { db } = await import("../db");
-  const { ttBookings, ttBookingTeachers } = await import("../db/pub-timetable");
+  const { ttBookings, ttBookingTeachers, ttStudents } = await import("../db/pub-timetable");
+  // TASK-884: the children's names come in the SAME select by two LEFT JOINs (a row with no child keeps its row; a joined
+  // child is `null` as a whole when absent). No extra round trip, and still two SELECTs at most.
+  const coStudents = alias(ttStudents, "co_students");
   const columns = {
     id: ttBookings.id,
     date: ttBookings.date,
@@ -208,10 +287,14 @@ export async function collectRows(teacherId: string, start: string, end: string)
     otherKind: ttBookings.otherKind,
     coStudentId: ttBookings.coStudentId,
     slotYieldedAt: ttBookings.slotYieldedAt,
+    student: { id: ttStudents.id, name: ttStudents.name, nickname: ttStudents.nickname },
+    coStudent: { id: coStudents.id, name: coStudents.name, nickname: coStudents.nickname },
   };
   const mine: TimetableRow[] = await db
     .select(columns)
     .from(ttBookings)
+    .leftJoin(ttStudents, eq(ttBookings.studentId, ttStudents.id))
+    .leftJoin(coStudents, eq(ttBookings.coStudentId, coStudents.id))
     .where(
       and(
         gte(ttBookings.date, start),
@@ -230,7 +313,12 @@ export async function collectRows(teacherId: string, start: string, end: string)
   const groupIds = mine.filter((r) => r.bookingType === "GROUP" && !r.groupId).map((r) => r.id);
   if (!groupIds.length) return mine;
   const have = new Set(mine.map((r) => r.id));
-  const seats: TimetableRow[] = await db.select(columns).from(ttBookings).where(inArray(ttBookings.groupId, groupIds));
+  const seats: TimetableRow[] = await db
+    .select(columns)
+    .from(ttBookings)
+    .leftJoin(ttStudents, eq(ttBookings.studentId, ttStudents.id))
+    .leftJoin(coStudents, eq(ttBookings.coStudentId, coStudents.id))
+    .where(inArray(ttBookings.groupId, groupIds));
   return [...mine, ...seats.filter((s) => !have.has(s.id))];
 }
 

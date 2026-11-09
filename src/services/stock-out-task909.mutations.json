@@ -1,0 +1,683 @@
+{
+  "task": "TASK-909",
+  "proves": "src/services/stock-out.service.test.ts",
+  "tests": "src/services/stock-out.service.test.ts",
+  "note": "REQ-120 R3.5 Stock OUT: S = the sale service, L = the shared below-zero rule, R = the route/body, G = the migration and its witness.",
+  "mutations": [
+    {
+      "id": "S1",
+      "what": "the first line is not decremented (qty sign dropped)",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "qty: -l.qty, remainingAfter",
+              "to": "qty: l.qty, remainingAfter"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "what": "the balance is not decremented",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "const remainingAfter = refuseIfNegative(it.model, it.name, it.qty ?? 0, -l.qty);",
+              "to": "const remainingAfter = it.qty ?? 0; refuseIfNegative(it.model, it.name, it.qty ?? 0, -l.qty);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "what": "below zero is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "const remainingAfter = refuseIfNegative(it.model, it.name, it.qty ?? 0, -l.qty);",
+              "to": "const remainingAfter = (it.qty ?? 0) - l.qty;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "what": "the movement is typed as something other than SALE",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "reason: \"Stock OUT sale\", refType: \"SALE\"",
+              "to": "reason: \"Stock OUT sale\", refType: \"STOCK_OUT\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "what": "the movement does not point at the sale",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "refType: \"SALE\", refId: m.saleId,",
+              "to": "refType: \"SALE\", refId: null,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "what": "the movement key drops the sale",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "`stock-out:${saleId}:${it.id}`",
+              "to": "`stock-out:${it.id}`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "what": "the movement carries the line's money again (shadow-posts into the legacy P&L)",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "remainingAfter, valueMinor: 0, idempotencyKey",
+              "to": "remainingAfter, valueMinor: lineNetMinor(l), idempotencyKey"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S7b",
+      "what": "the net helper ignores the discount",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "export const lineNetMinor = (l: CartLine): number => l.qty * l.unitPriceSatang - (l.discountSatang ?? 0);",
+              "to": "export const lineNetMinor = (l: CartLine): number => l.qty * l.unitPriceSatang;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "what": "the commission is defaulted instead of stored as given",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "commissionMinor: l.commissionSatang ?? 0, movementId",
+              "to": "commissionMinor: Math.round(lineNetMinor(l) * 0.4), movementId"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "what": "the discount is not stored",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "discountMinor: l.discountSatang ?? 0, commissionMinor",
+              "to": "discountMinor: 0, commissionMinor"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "what": "the unit price is not stored as given",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "unitPriceMinor: l.unitPriceSatang, discountMinor",
+              "to": "unitPriceMinor: l.unitPriceSatang + 1, discountMinor"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "what": "the sale line is not linked to its movement",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "discountMinor: l.discountSatang ?? 0, commissionMinor: l.commissionSatang ?? 0, movementId });",
+              "to": "discountMinor: l.discountSatang ?? 0, commissionMinor: l.commissionSatang ?? 0, movementId: \"x\" });"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "what": "the sellers are dropped",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "sellerRefs: cart.sellerRefs ?? [], actor, idempotencyKey",
+              "to": "sellerRefs: [], actor, idempotencyKey"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "what": "the actor is dropped from the sale",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "sellerRefs: cart.sellerRefs ?? [], actor, idempotencyKey",
+              "to": "sellerRefs: cart.sellerRefs ?? [], actor: null, idempotencyKey"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S14",
+      "what": "the branch default is not BRAVO",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "soldAt, branch: cart.branch ?? \"BRAVO\", method: cart.method ?? null",
+              "to": "soldAt, branch: cart.branch ?? \"OTHER\", method: cart.method ?? null"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S15",
+      "what": "the idempotency check is gone (a re-POST sells again)",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (prior) return {",
+              "to": "if (false as boolean) return {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "what": "a re-POST reports a fresh sale instead of the first",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "return { saleId: prior.id, movementsWritten: prior.lines, soldAt: prior.soldAt, alreadyApplied: true as const };",
+              "to": "return { saleId: \"other\", movementsWritten: 0, soldAt: prior.soldAt, alreadyApplied: true as const };"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S17",
+      "what": "the re-POST answer does not say alreadyApplied",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "soldAt: prior.soldAt, alreadyApplied: true as const };",
+              "to": "soldAt: prior.soldAt } as never;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S18",
+      "what": "the key is looked up BEFORE the items are locked",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "          const items = await tx.lockItems(ids); // locked FIRST: a second post of the same cart waits here and then sees the first\n          const prior = await tx.saleByKey(cart.idempotencyKey);",
+              "to": "          const prior = await tx.saleByKey(cart.idempotencyKey);\n          const items = await tx.lockItems(ids);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S19",
+      "what": "an unknown item is not refused",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (!it) throw new ApiException(404, \"UNKNOWN_ITEM\"",
+              "to": "if (!it) throw new ApiException(500, \"UNKNOWN_ITEM\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S20",
+      "what": "an inactive item may be sold",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (!it.active) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S21",
+      "what": "a duplicate item in the cart is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (new Set(ids).size !== ids.length) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S22",
+      "what": "a discount over the line is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if ((l.discountSatang ?? 0) > l.qty * l.unitPriceSatang) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S23",
+      "what": "a zero / fractional qty is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (!Number.isInteger(l.qty) || l.qty <= 0) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S24",
+      "what": "a future soldAt is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (soldAt.getTime() > now().getTime() + 24 * 3_600_000) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S25",
+      "what": "an invalid soldAt is allowed",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (Number.isNaN(soldAt.getTime())) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S26",
+      "what": "the response carries a total",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "return { saleId, movementsWritten: plan.length, soldAt: soldAt.toISOString() };",
+              "to": "return { saleId, movementsWritten: plan.length, soldAt: soldAt.toISOString(), totalSatang: 0 } as never;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S27",
+      "what": "the refusal is not turned into the NEGATIVE_BALANCE exception",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (e.code === \"NEGATIVE_BALANCE\") throw new ApiException(409, \"NEGATIVE_BALANCE\", e.message, { model: e.model, name: e.item, resultingBalance: e.resultingBalance });",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S28",
+      "what": "the lock is not in id order",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": ".orderBy(asc(boItem.id)).for(\"update\")",
+              "to": ".for(\"update\")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S29",
+      "what": "the lock is gone",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": ".orderBy(asc(boItem.id)).for(\"update\")",
+              "to": ".orderBy(asc(boItem.id))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S30",
+      "what": "the race loser throws instead of answering with the winner's result",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (pgErrorCode(e) === \"23505\") {",
+              "to": "if (false as boolean) {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S31",
+      "what": "the lock picks every item, not only stock products",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "where(and(eq(boItem.externalSource, STOCK_SOURCE), inArray(boItem.id, ids)))",
+              "to": "where(inArray(boItem.id, ids))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "what": "the import has its own below-zero rule again (not the shared one)",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "      refuseIfNegative(e.model, p.name, p.qty ?? 0, e.delta);",
+              "to": "      if ((p.qty ?? 0) + e.delta < 0) throw new StockImportRefusal(\"NEGATIVE_BALANCE\", \"x\", e.model, p.name, 0);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "what": "the shared rule allows a balance of exactly 0 to be refused",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "  if (resulting < 0) throw new StockImportRefusal(\"NEGATIVE_BALANCE\", `«${model}»",
+              "to": "  if (resulting <= 0) throw new StockImportRefusal(\"NEGATIVE_BALANCE\", `«${model}»"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R1",
+      "what": "Stock OUT is CEO-only",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/out\", adminAuth,",
+              "to": ".post(\"/out\", requireRole(\"ceo\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "what": "Stock OUT has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".post(\"/out\", adminAuth, zValidator(\"json\", stockOutBody)",
+              "to": ".post(\"/out\", zValidator(\"json\", stockOutBody)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "what": "a try/catch with a special body returns on /out",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "    return c.json(await stockOutService.sell(c.req.valid(\"json\"), user?.sub ?? null)); // a NEGATIVE_BALANCE",
+              "to": "    try { return c.json(await stockOutService.sell(c.req.valid(\"json\"), user?.sub ?? null)); } catch (e) { throw e; } // a NEGATIVE_BALANCE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "what": "the cart may carry a negative price",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "const money = z.number().int().min(0).max(1_000_000_000);",
+              "to": "const money = z.number().int().max(1_000_000_000);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R5",
+      "what": "the cart may carry a fractional qty",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "qty: z.number().int().min(1).max(100_000)",
+              "to": "qty: z.number().min(1).max(100_000)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R6",
+      "what": "an empty cart is accepted",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "    .min(1)\n    .max(200),\n});",
+              "to": "    .max(200),\n});"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R7",
+      "what": "the idempotency key is optional-looking (any string)",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "idempotencyKey: z.string().regex(/^[A-Za-z0-9_:.-]{8,100}$/),\n  soldAt",
+              "to": "idempotencyKey: z.string(),\n  soldAt"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R8",
+      "what": "the actor is not passed",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "stockOutService.sell(c.req.valid(\"json\"), user?.sub ?? null)",
+              "to": "stockOutService.sell(c.req.valid(\"json\"), null)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the migration's money check is gone",
+      "files": [
+        {
+          "file": "drizzle/0016_bo_sale.sql",
+          "edits": [
+            {
+              "from": " AND \"discount_minor\" <= \"qty\" * \"unit_price_minor\")",
+              "to": ")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the sale key is not unique",
+      "files": [
+        {
+          "file": "drizzle/0016_bo_sale.sql",
+          "edits": [
+            {
+              "from": "CREATE UNIQUE INDEX \"bo_sale_idempotency_uq\"",
+              "to": "CREATE INDEX \"bo_sale_idempotency_uq\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "what": "the witness points at the first table's index",
+      "files": [
+        {
+          "file": "src/lib/migration-witness.ts",
+          "edits": [
+            {
+              "from": "probe: { kind: \"index\", index: \"bo_sale_line_movement_uq\", schema: \"bo\" }",
+              "to": "probe: { kind: \"index\", index: \"bo_sale_idempotency_uq\", schema: \"bo\" }"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

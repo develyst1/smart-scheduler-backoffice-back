@@ -1,0 +1,443 @@
+{
+  "task": "TASK-909 revenue seam",
+  "proves": "src/services/stock-out.service.test.ts + src/services/stock-import.service.test.ts",
+  "tests": "src/services/stock-out.service.test.ts + src/services/stock-import.service.test.ts",
+  "note": "REQ-120 row 21: V = the sale's revenue + METHOD_REQUIRED + NO_REVENUE_CATEGORY, W = the writer (postSaleLineRevenue), K = the category picker, I = the import's category mapping.",
+  "mutations": [
+    {
+      "id": "V1",
+      "what": "METHOD_REQUIRED is not enforced",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (!cart.method) throw new ApiException(400, \"METHOD_REQUIRED\"",
+              "to": "if (false as boolean) throw new ApiException(400, \"METHOD_REQUIRED\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V2",
+      "what": "a product with no revenue category may be sold",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "if (!it.revenueCategoryId) throw new ApiException(",
+              "to": "if (false as boolean) throw new ApiException("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V3",
+      "what": "no revenue is posted for a line",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "await tx.postLineRevenue({",
+              "to": "if (false as boolean) await tx.postLineRevenue({"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V4",
+      "what": "the revenue amount is the gross (discount ignored)",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "productName: it.name, amountMinor: lineNetMinor(l), actor });",
+              "to": "productName: it.name, amountMinor: l.qty * l.unitPriceSatang, actor });"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V5",
+      "what": "the commission is netted off the revenue",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "productName: it.name, amountMinor: lineNetMinor(l), actor });",
+              "to": "productName: it.name, amountMinor: lineNetMinor(l) - (l.commissionSatang ?? 0), actor });"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V6",
+      "what": "the revenue uses the wrong category (the first item's)",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "categoryId: it.revenueCategoryId!,",
+              "to": "categoryId: plan[0].it.revenueCategoryId!,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V7",
+      "what": "the revenue day is the keying-in day, not the sale's",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "soldOn: bangkokDate(soldAt),",
+              "to": "soldOn: bangkokDate(now()),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V8",
+      "what": "the revenue branch is hard-coded",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "branch: cart.branch ?? \"BRAVO\", method, categoryId",
+              "to": "branch: \"BRAVO\", method, categoryId"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V9",
+      "what": "the revenue points at the sale, not the line",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "await tx.postLineRevenue({ saleLineId,",
+              "to": "await tx.postLineRevenue({ saleLineId: saleId,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V10",
+      "what": "the store posts the revenue outside the sale's transaction",
+      "files": [
+        {
+          "file": "src/services/stock-out.service.ts",
+          "edits": [
+            {
+              "from": "postLineRevenue: (r) => postSaleLineRevenue(tx, r),",
+              "to": "postLineRevenue: (r) => postSaleLineRevenue(db, r),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W1",
+      "what": "the writer's type is not the category's",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "type: cat.type,",
+              "to": "type: \"SALES\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W2",
+      "what": "the writer's source is not STOCK",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "source: \"STOCK\",",
+              "to": "source: \"BOOKING\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W3",
+      "what": "the writer's key drops the sale line",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "idempotencyKey: `rl:sale-line:${input.saleLineId}`,",
+              "to": "idempotencyKey: `rl:sale-line`,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W4",
+      "what": "the writer has no ON CONFLICT",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "    .onConflictDoNothing({ target: boRevenueLine.idempotencyKey })\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W5",
+      "what": "a net of 0 is posted",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "  if (input.amountMinor <= 0) return { written: false };\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W6",
+      "what": "an inactive category is accepted",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "if (!cat || !cat.active || cat.type === \"REFUND\") throw",
+              "to": "if (!cat) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W8",
+      "what": "the writer's refType is wrong",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "refType: \"SALE_LINE\",",
+              "to": "refType: \"SALE\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W9",
+      "what": "the writer's method is not the sale's",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "method: input.method,",
+              "to": "method: \"TRANSFER\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W10",
+      "what": "the writer's amount is not the given one",
+      "files": [
+        {
+          "file": "src/services/sale-line-revenue.service.ts",
+          "edits": [
+            {
+              "from": "amountMinor: input.amountMinor,",
+              "to": "amountMinor: input.amountMinor + 1,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1",
+      "what": "the picker route is CEO-only",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/revenue-categories\", adminAuth,",
+              "to": ".get(\"/revenue-categories\", requireRole(\"ceo\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K2",
+      "what": "the picker lists course types too",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "inArray(boRevenueCategory.type, [\"SALES\", \"FNB\", \"RENT\", \"OTHER\"])",
+              "to": "inArray(boRevenueCategory.type, [\"SALES\", \"FNB\", \"RENT\", \"OTHER\", \"COURSE\"])"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K3",
+      "what": "the picker lists inactive categories",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "eq(boRevenueCategory.active, true)",
+              "to": "sql`true`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I1",
+      "what": "an unmatched Type gets no category",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "(matchRevenueCategory(label, cats)?.id ?? (await tx.ensureDefaultRevenueCategory!()))",
+              "to": "(matchRevenueCategory(label, cats)?.id ?? undefined)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I2",
+      "what": "the matched category is ignored (everything is the default)",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "(matchRevenueCategory(label, cats)?.id ?? (await tx.ensureDefaultRevenueCategory!()))",
+              "to": "(await tx.ensureDefaultRevenueCategory!())"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I3",
+      "what": "the unmatched rows are not flagged",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (!matchRevenueCategory(r.category ?? p?.category ?? null, cats))",
+              "to": "if (false as boolean)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I4",
+      "what": "an existing product's category is overwritten even when it has one",
+      "files": [
+        {
+          "file": "src/services/stock-import.service.ts",
+          "edits": [
+            {
+              "from": "if (cats && !p.revenueCategoryId) patch.revenueCategoryId",
+              "to": "if (cats) patch.revenueCategoryId"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I5",
+      "what": "the match is case-sensitive",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "const k = (label ?? \"\").trim().toLowerCase();",
+              "to": "const k = (label ?? \"\").trim();"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I6",
+      "what": "a COURSE category can be a product's category",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "new Set([\"SALES\", \"FNB\", \"OTHER\"])",
+              "to": "new Set([\"SALES\", \"FNB\", \"OTHER\", \"COURSE\"])"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I8",
+      "what": "an ambiguous name still matches",
+      "files": [
+        {
+          "file": "src/lib/stock-import.ts",
+          "edits": [
+            {
+              "from": "return hits.length === 1 ? hits[0] : null;",
+              "to": "return hits[0] ?? null;"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

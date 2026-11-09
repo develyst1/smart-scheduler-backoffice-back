@@ -7,6 +7,7 @@ import { badRequest } from "../lib/http";
 import {
   BRANCHES,
   daysBetween,
+  ECA_TERM_MAX,
   isValidDate,
   LINE_TYPES,
   MAX_RANGE_DAYS,
@@ -47,6 +48,29 @@ const createLineBody = z.object({
   type: typeEnum, // a manual line is never a REFUND (§3)
   categoryId: z.string().uuid(),
   productName: z.string().trim().max(120).optional(),
+  amountMinor: z.number().int().positive(),
+  method: z.enum(METHODS),
+  remark: z.string().trim().max(500).optional(),
+});
+
+// ── TASK-890 (R2.2) — an ECA payment entry: price per class × students × classes per term, on the day the school paid. ──
+const ecaBody = z.object({
+  categoryId: z.string().uuid(),
+  term: z.string().trim().min(1).max(ECA_TERM_MAX),
+  pricePerClassMinor: z.number().int().positive(),
+  students: z.number().int().positive(),
+  classesPerTerm: z.number().int().positive(),
+  paidOn: date,
+  branch: z.enum(BRANCHES).default("BRAVO"),
+  method: z.enum(METHODS).default("TRANSFER"),
+});
+
+// ── TASK-893 (SPEC-099 §10) — a refund: the sources picker and the entry. ──
+const refundSourcesQuery = z.object({ q: z.string().trim().max(60).optional() });
+const refundBody = z.object({
+  refType: z.enum(PAYMENT_REF_TYPES),
+  refId: z.string().uuid(),
+  refundedOn: date,
   amountMinor: z.number().int().positive(),
   method: z.enum(METHODS),
   remark: z.string().trim().max(500).optional(),
@@ -102,6 +126,19 @@ export const revenueLedgerRoutes = new Hono()
     // `actor` = the JWT subject when there is one (SKIP_ADMIN_AUTH without a token sets the dev user, never null).
     const actor = c.get("user")?.sub ?? null;
     return c.json({ line: await ledger.createManualLine(c.req.valid("json"), actor) }, 201);
+  })
+  // TASK-893: the refund. The picker, then the entry (order inside the service: plan → fee → once → SB cancels → ONE negative REFUND line).
+  .get("/refunds/sources", requireRevenueAccess, zv("query", refundSourcesQuery), async (c) =>
+    c.json(await ledger.listRefundSources(c.req.valid("query").q ?? "")), // already { sources: [...] }, wrapped like every list in this API
+  )
+  .post("/refunds", requireRevenueAccess, zv("json", refundBody), async (c) => {
+    const actor = c.get("user")?.sub ?? null;
+    return c.json(await ledger.createRefund(c.req.valid("json"), actor), 201);
+  })
+  // TASK-890: ฿ entered by the CEO (ฟีน); ONE revenue line; the history is `GET /lines?type=ECA`.
+  .post("/eca", requireRevenueAccess, zv("json", ecaBody), async (c) => {
+    const actor = c.get("user")?.sub ?? null;
+    return c.json({ line: await ledger.createEcaPayment(c.req.valid("json"), actor) }, 201);
   })
   .get("/lines", requireRevenueAccess, zv("query", listLinesQuery), async (c) =>
     c.json(await ledger.listLines(c.req.valid("query"))),

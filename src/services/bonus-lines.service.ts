@@ -16,13 +16,15 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { boPaySlipLine } from "../db/schema";
-import { conflict } from "../lib/http";
-import { DEFAULT_RULES, type Bonus100Candidate, type Bonus50Candidate, type BonusRules } from "../lib/bonus-rules";
+import { badRequest, conflict } from "../lib/http";
+import { DEFAULT_RULES, type Bonus100Candidate, type Bonus50Candidate, type BonusRules, type BonusWindow } from "../lib/bonus-rules";
 import { isWeekend, roleOfDay } from "../lib/role-of-day";
 import { numericFromSatang, satangFromNumeric } from "../lib/satang";
 import { listBonusCandidates, type BonusCandidates } from "./bonus-candidates.service";
 import { dbSalaryStore } from "./salary-db.store";
 import type { Profile, SalaryService, SalaryStore } from "./salary.service";
+import { autoLineKey, bonusDetail, fire, payLineText, realNotify, type NotifyFn } from "./salary-notify"; // 🔻 TASK-920
+import { bangkokDate } from "../lib/stock-read";
 
 /** 50 ฿ and 100 ฿ in satang (R1.2). */
 export const BONUS_50_SATANG = 5_000;
@@ -89,6 +91,8 @@ export interface ApplyBonusResult {
   orphaned: OrphanedLine[];
   /** Same (slip, source_ref) but the amount or label now differs. NOT applied: correcting money is a Salary rule, not this TASK's. */
   changed: ChangedLine[];
+  /** 🔻 TASK-920: how many Bonus notifications failed (present only when > 0). The lines are written regardless. */
+  notifyFailed?: number;
 }
 
 // ───────────────────────────────── the pure rules ─────────────────────────────────
@@ -258,14 +262,16 @@ export interface BonusLinesDeps {
   /** The profiles (employment type, roles). */
   profiles: Pick<SalaryStore, "listProfiles">;
   lines: BonusLineStore;
-  candidates: (month: string, rules: BonusRules) => Promise<BonusCandidates>;
+  candidates: (window: BonusWindow, rules: BonusRules) => Promise<BonusCandidates>;
+  /** 🔻 TASK-920: the notifier + the coach-name lookup + today's Bangkok day. All optional: absent = no notifications (every existing test). */
+  notify?: NotifyFn;
+  names?: (teacherIds: string[]) => Promise<Map<string, string>>;
+  today?: () => string;
 }
-
-const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 /**
  * Applies the period's Bonus 50 / 100 candidates as auto lines. 404 for an unknown period (Jason's `getPeriod`); 409 `LOCKED`
- * for a locked one (SPEC-100 §4). The candidates are the PURCHASE-month's (the period's year and month), as the TASK says.
+ * for a locked one (SPEC-100 §4). The candidates are the PURCHASES of the R1.4 pay period (periodStart..periodEnd), DECISIONS row 18.
  * Not one database transaction: the stores have no unit of work; each line is atomic and the unique index makes a re-run finish
  * whatever a failure left undone.
  */
@@ -273,8 +279,11 @@ export async function applyBonusLines(periodId: string, rules: BonusRules, actor
   const overview = await deps.salary.getPeriod(periodId); // lazy lock applied here; 404 if unknown
   if (overview.period.status === "locked") throw conflict("LOCKED", "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้");
 
-  const month = `${overview.period.year}-${pad2(overview.period.month)}`;
-  const candidates = await deps.candidates(month, rules);
+  // 🔻 Rework (DECISIONS row 18): the purchases of the R1.4 PAY PERIOD (`periodStart..periodEnd`, inclusive, Bangkok dates),
+  // not the calendar month: a 30/9 purchase lands on October's slip, a 31/10 purchase on November's.
+  const { periodStart, periodEnd } = overview.period;
+  if (!periodStart || !periodEnd) throw badRequest("งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+  const candidates = await deps.candidates({ from: periodStart, to: periodEnd }, rules);
   const profiles = new Map((await deps.profiles.listProfiles()).map((p) => [p.teacherId, p]));
   const slipByTeacher = new Map(overview.slips.map((s) => [s.teacherId, { id: s.id, status: s.status }]));
 
@@ -284,14 +293,20 @@ export async function applyBonusLines(periodId: string, rules: BonusRules, actor
 
   let written = 0;
   let raced = 0;
+  let notifyFailed = 0;
+  const day = (deps.today ?? (() => bangkokDate(new Date())))();
+  const nameOf = deps.names && toWrite.length ? await deps.names([...new Set(toWrite.map((l) => l.teacherId))]) : new Map<string, string>();
   for (const l of toWrite) {
-    if ((await deps.lines.insertAutoBonusLine(l, actor)) === "written") written += 1;
-    else raced += 1; // somebody wrote it between our read and our write: that is "unchanged", never a 500
+    if ((await deps.lines.insertAutoBonusLine(l, actor)) === "written") {
+      written += 1;
+      // 🔻 TASK-920: one Bonus item per line WRITTEN (never for `unchanged` / `changed` / `orphaned`): «Bonus · coach · dd/mm/yy · 1st Trial|Renew», NO amount. The line is committed; a failure is only counted.
+      notifyFailed += (await fire(deps.notify, { type: "Bonus", text: payLineText("Bonus", nameOf.get(l.teacherId), day, bonusDetail(l.sourceRef)), occurredOn: day, key: autoLineKey(l.slipId, "bonus", l.sourceRef) })).failed;
+    } else raced += 1; // somebody wrote it between our read and our write: that is "unchanged", never a 500
   }
-  return { written, unchanged: unchanged + raced, skipped: plan.skipped, unresolved: plan.unresolved, orphaned, changed };
+  return { written, unchanged: unchanged + raced, skipped: plan.skipped, unresolved: plan.unresolved, orphaned, changed, ...(notifyFailed ? { notifyFailed } : {}) };
 }
 
 /** The production wiring: the real candidates, the real profiles, the real line store. The route calls this. */
 export function applyBonusLinesFor(salary: Pick<SalaryService, "getPeriod">, periodId: string, actor: string, rules: BonusRules = DEFAULT_RULES): Promise<ApplyBonusResult> {
-  return applyBonusLines(periodId, rules, actor, { salary, profiles: dbSalaryStore, lines: dbBonusLineStore(), candidates: (m, r) => listBonusCandidates(m, r) });
+  return applyBonusLines(periodId, rules, actor, { salary, profiles: dbSalaryStore, lines: dbBonusLineStore(), candidates: (m, r) => listBonusCandidates(m, r), notify: realNotify, names: (ids) => dbSalaryStore.teacherNames(ids) });
 }

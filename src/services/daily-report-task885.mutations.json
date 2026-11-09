@@ -1,0 +1,383 @@
+{
+  "task": "TASK-885",
+  "proves": "src/services/daily-report.service.test.ts",
+  "tests": "src/services/daily-report.service.test.ts",
+  "note": "REQ-120 R1.7 Daily Training Report: R = role of the day, H = hours / reader, D = the description, I = income (an FL only-the-first-line mutant is EQUIVALENT: the pay run writes ONE line per date), W = who is listed, T = totals, V = date, G = the gate.",
+  "mutations": [
+    {
+      "id": "R1",
+      "what": "the role of the day is the profile's primary type (a PT+FL Wednesday reads Part-time)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "const role = roleOfDay(p, date);",
+              "to": "const role = p.employmentType as \"FT\" | \"PT\" | \"FL\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "what": "the role words are swapped (Full-time ↔ Part-time)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "FT: \"Full-time\", PT: \"Part-time\"",
+              "to": "FT: \"Part-time\", PT: \"Full-time\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "what": "the order is not the final UI's (Freelance first)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "const ROLE_ORDER: readonly string[] = [\"FT\", \"PT\", \"FL\"];",
+              "to": "const ROLE_ORDER: readonly string[] = [\"FL\", \"PT\", \"FT\"];"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H1",
+      "what": "hours is minutes ÷ 60 truncated, not 2 decimals",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "const hoursOf = (min: number): number => Math.round((min / 60) * 100) / 100;",
+              "to": "const hoursOf = (min: number): number => Math.floor(min / 60);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H2",
+      "what": "the reader is asked for the wrong day (the next one)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "const days = await readHours(p.teacherId, date, date);",
+              "to": "const days = await readHours(p.teacherId, date, date.slice(0, 8) + \"31\");"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "what": "the Extra Hour wording loses the baht sign",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "return `Extra Hour ${m[1]} ฿`;",
+              "to": "return `Extra Hour ${m[1]}`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "what": "the FL parts keep the pay run's lower-case class",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "return `${[classWord(cls!), ...rest].join(\" \")} ฿`;",
+              "to": "return `${[cls, ...rest].join(\" \")} ฿`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D3",
+      "what": "the FL parts are joined with a comma, not « · »",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "parts.join(\" · \")",
+              "to": "parts.join(\", \")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D4",
+      "what": "an FT under the threshold shows an amount of 0 instead of «—»",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "let description = \"—\";",
+              "to": "let description = \"0\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D5",
+      "what": "a missing rate part hides the gap (no dash)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "parts.push(`${classWord(m.classType)} ${hoursOf(day.byType[m.classType] ?? 0)} Hr × ${MISSING_RATE_WORDS} ฿`);",
+              "to": "void 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D6",
+      "what": "the missing rate is not listed",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "missingRates.push({ teacherId: p.teacherId, classType: m.classType });",
+              "to": "void 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D7",
+      "what": "the parts are not put back in the pay run's class order",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "parts.sort((a, b) => order(a) - order(b));",
+              "to": "void 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E1",
+      "what": "ECA reads «Eca» again (a capitalisation, not the fixed map)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "eca: \"ECA\"",
+              "to": "eca: \"Eca\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "what": "a missing part uses the raw lower-case class",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "parts.push(`${classWord(m.classType)} ",
+              "to": "parts.push(`${m.classType} "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "what": "the class words fall back for every class (the map is ignored)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "const classWord = (c: string): string => CLASS_WORDS[c as ClassType] ?? c.charAt(0).toUpperCase() + c.slice(1);",
+              "to": "const classWord = (c: string): string => c.charAt(0).toUpperCase() + c.slice(1);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I2",
+      "what": "an FT amount is guessed at 0 when there is no line (null lost)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "let incomeSatang: number | null = null;",
+              "to": "let incomeSatang: number | null = 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W1",
+      "what": "the system teacher is read (the real-people filter is gone)",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "&& real.has(x.teacherId))",
+              "to": ")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W2",
+      "what": "an inactive profile is listed",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "profiles.filter((x) => x.active && ",
+              "to": "profiles.filter((x) => "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W3",
+      "what": "a day with no minutes is a row",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "if (!day || day.teachingMinutesTotal <= 0) continue;",
+              "to": "if (!day) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T1",
+      "what": "the totals count only the first coach",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "coaches: out.length,",
+              "to": "coaches: Math.min(out.length, 1),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "what": "the total income counts unknown as a number twice",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "incomeSatang: out.reduce((n, r) => n + (r.incomeSatang ?? 0), 0)",
+              "to": "incomeSatang: out.reduce((n, r) => n + (r.incomeSatang ?? 0), 0) + 1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "what": "the total minutes forget one row",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "minutes: out.reduce((n, r) => n + r.minutes, 0), incomeSatang:",
+              "to": "minutes: out.slice(1).reduce((n, r) => n + r.minutes, 0), incomeSatang:"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V1",
+      "what": "a malformed date is accepted",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "if (!isRealDate(date)) throw badRequest(\"date must be a real date, YYYY-MM-DD\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V2",
+      "what": "the weekday is the day before",
+      "files": [
+        {
+          "file": "src/services/daily-report.service.ts",
+          "edits": [
+            {
+              "from": "weekday: WEEKDAY[dayOfWeek(date)]!,",
+              "to": "weekday: WEEKDAY[(dayOfWeek(date) + 6) % 7]!,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the route is open to every signed-in role",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".get(\"/daily\", ceo,",
+              "to": ".get(\"/daily\", requireRole(\"ceo\", \"admin\", \"coach\"),"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

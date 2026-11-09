@@ -9,13 +9,27 @@ declare module "hono" {
   }
 }
 
-/** Dev-friendly service token check for machine consumers (e.g. scheduling API). */
+/**
+ * Service token check for machine consumers (e.g. the scheduling API). 🔒 FAILS CLOSED (TASK-890): an unset / empty SERVICE_TOKEN used to let every request through, leaving
+ * teacher-sync, accounts debits and recurring open to anyone. Now: the dev bypass (SKIP_ADMIN_AUTH=true, like adminOrService) passes; otherwise there must be a configured token
+ * AND the request must carry it.
+ */
+/** 🔒 TASK-896 - values that ship in `.env.example` / the repo's `.env` as stand-ins. They are SET, known and guessable, so they count as NOT configured. One list: add a future placeholder here. */
+export const PLACEHOLDER_SERVICE_TOKENS: readonly string[] = ["change-me-service-token"];
+
+/** The service token to enforce, or `undefined` when none is really configured (unset, empty, or a placeholder). Every machine-auth check goes through this. */
+export function configuredServiceToken(env: Record<string, string | undefined> = process.env): string | undefined {
+  const t = env.SERVICE_TOKEN;
+  return t && !PLACEHOLDER_SERVICE_TOKENS.includes(t) ? t : undefined;
+}
+
 export async function serviceAuth(c: Context, next: Next) {
-  const expected = process.env.SERVICE_TOKEN;
-  if (!expected) {
+  if (process.env.SKIP_ADMIN_AUTH === "true") {
     await next();
     return;
   }
+  const expected = configuredServiceToken();
+  if (!expected) throw unauthorized("service token ไม่ได้ตั้งค่า");
   const header = c.req.header("Authorization");
   const token = header?.startsWith("Bearer ") ? header.slice(7) : c.req.header("X-Service-Token");
   if (token !== expected) throw unauthorized("service token ไม่ถูกต้อง");
@@ -91,7 +105,7 @@ export async function adminOrService(c: Context, next: Next) {
     return;
   }
   const bearer = bearerOf(c) || undefined;
-  const expected = process.env.SERVICE_TOKEN;
+  const expected = configuredServiceToken(); // 🔻 TASK-896: the placeholder never opens this door
   const svcToken = c.req.header("X-Service-Token") ?? bearer;
   if (expected && svcToken === expected) {
     await next(); // machine consumer with a valid service token

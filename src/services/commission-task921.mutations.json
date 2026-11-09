@@ -1,0 +1,698 @@
+{
+  "task": "TASK-921",
+  "proves": "src/services/commission-lines.service.test.ts",
+  "tests": "src/services/commission-lines.service.test.ts",
+  "note": "REQ-120 R1.2/R1.3: E = the equal split + remainder, G = the STAFF group match, S = eligibility, P = the FT pool, L = refs/labels, A = the apply, F = the pool upsert + the confirmed-slip rules, N = notifications, Q = the SQL, R = the route.",
+  "mutations": [
+    {
+      "id": "E1",
+      "what": "the remainder is dropped (floor only)",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));",
+              "to": "return Array.from({ length: n }, () => base);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "what": "the remainder goes to the LAST shares",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "base + (i < extra ? 1 : 0)",
+              "to": "base + (i >= n - extra ? 1 : 0)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "what": "everyone gets the remainder",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "base + (i < extra ? 1 : 0)",
+              "to": "base + (extra > 0 ? 1 : 0)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "what": "a fractional amount is accepted",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (!Number.isInteger(total) || total < 0) throw",
+              "to": "if (total < 0) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E5",
+      "what": "zero shares are accepted",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (!Number.isInteger(n) || n < 1) throw",
+              "to": "if (!Number.isInteger(n)) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the STAFF group match is case-sensitive",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "(group ?? \"\").trim().toLowerCase() === STAFF_COMMISSION_GROUP.toLowerCase()",
+              "to": "(group ?? \"\").trim() === STAFF_COMMISSION_GROUP"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the STAFF group match is not trimmed",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "(group ?? \"\").trim().toLowerCase()",
+              "to": "(group ?? \"\").toLowerCase()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "what": "any non-null group counts as Skate bag",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "(group ?? \"\").trim().toLowerCase() === STAFF_COMMISSION_GROUP.toLowerCase()",
+              "to": "(group ?? \"\").trim() !== \"\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G4",
+      "what": "the STAFF group is spelled differently",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "export const STAFF_COMMISSION_GROUP = \"Skate bag\";",
+              "to": "export const STAFF_COMMISSION_GROUP = \"Skatebag\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "what": "STAFF earn on every group",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (s.type === \"STAFF\" && !isStaffGroup(input.groupName)) {",
+              "to": "if (false as boolean) {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "what": "a seller with no profile is paid",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (s.type === null) {",
+              "to": "if (false as boolean) {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "what": "an FT share is paid to the FT directly (not the pool)",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (s.type === \"FT\") out.toPool += amountMinor;\n    else out.own.push",
+              "to": "if (false as boolean) out.toPool += amountMinor;\n    else out.own.push"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "what": "a PT share goes to the pool",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (s.type === \"FT\") out.toPool += amountMinor;",
+              "to": "if (s.type !== \"STAFF\") out.toPool += amountMinor;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "what": "sellers are not de-duplicated",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "const sellers = input.sellers.filter((s) => (seen.has(s.teacherId) ? false : (seen.add(s.teacherId), true)));",
+              "to": "const sellers = input.sellers;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "what": "the skipped share is re-split among the eligible",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "const shares = equalShares(input.amountMinor, sellers.length);",
+              "to": "const shares = equalShares(input.amountMinor, Math.max(1, sellers.filter((s) => s.type !== null && !(s.type === 'STAFF' && !isStaffGroup(input.groupName))).length)); if (shares.length < sellers.length) shares.push(...Array(sellers.length - shares.length).fill(0));"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "what": "the pool is not shared (all to the first FT)",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "const parts = equalShares(poolMinor, ids.length);",
+              "to": "const parts = [poolMinor, ...Array(ids.length - 1).fill(0)];"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "what": "an empty FT list pays nothing but reports nothing",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "if (!ids.length) return { shares: [], unpaid: poolMinor };",
+              "to": "if (!ids.length) return { shares: [], unpaid: 0 };"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "what": "the pool ids are not de-duplicated",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "const ids = [...new Set(ftTeacherIds)];",
+              "to": "const ids = ftTeacherIds;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "what": "the own ref drops the seller",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "export const ownRef = (saleLineId: string, teacherId: string) => `cm:${saleLineId}:${teacherId}`;",
+              "to": "export const ownRef = (saleLineId: string, _teacherId: string) => `cm:${saleLineId}`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "what": "the pool ref drops the period",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "export const poolRef = (periodId: string, teacherId: string) => `cm-pool:${periodId}:${teacherId}`;",
+              "to": "export const poolRef = (_periodId: string, teacherId: string) => `cm-pool:${teacherId}`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L3",
+      "what": "the pool label has no period",
+      "files": [
+        {
+          "file": "src/lib/commission-split.ts",
+          "edits": [
+            {
+              "from": "Commission · Full-time pool · ${MONTHS[month - 1] ?? month} ${year}",
+              "to": "Commission · Full-time pool"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A1",
+      "what": "a locked period is not refused",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (overview.period.status === \"locked\") throw locked();",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "the sales are read for the wrong range",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "listSaleLines({ from: periodStart, to: periodEnd })",
+              "to": "listSaleLines({ from: periodStart, to: periodStart })"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "a sale with no seller is silently dropped (not listed)",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (!r.sellerRefs.length) { res.skipped.push({ saleLineId: r.saleLineId, teacherId: null, reason: \"NO_SELLER\", amountMinor: r.commissionMinor }); continue; }",
+              "to": "if (!r.sellerRefs.length) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "a zero-commission line is processed",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (r.commissionMinor <= 0) continue;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "a zero own share is written",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (o.amountMinor > 0) owns.push",
+              "to": "owns.push"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "what": "an own line is written into a confirmed slip",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (slip.status !== \"draft\") { res.skipped.push({ saleLineId: o.ref.split(\":\")[1] ?? null, teacherId: o.teacherId, reason: \"SLIP_NOT_DRAFT\"",
+              "to": "if (false as boolean) { res.skipped.push({ saleLineId: o.ref.split(\":\")[1] ?? null, teacherId: o.teacherId, reason: \"SLIP_NOT_DRAFT\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "what": "a changed own line is rewritten / not reported",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "else res.changed.push({ slipId: slip.id, sourceRef: o.ref,",
+              "to": "else if (false as boolean) res.changed.push({ slipId: slip.id, sourceRef: o.ref,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A9",
+      "what": "a missing slip is not listed",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "{ res.skipped.push({ saleLineId: o.ref.split(\":\")[1] ?? null, teacherId: o.teacherId, reason: \"NO_SLIP\", amountMinor: o.amountSatang }); continue; }",
+              "to": "{ continue; }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "what": "a raced insert is counted as written",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (id === null) { res.unchanged++; continue; } // raced: somebody wrote it first",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "what": "a mid-period joiner is left out of the pool (only FTs with a sale)",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (p && effectiveRoles(p).includes(\"FT\")) ftIds.push(s.teacherId);",
+              "to": "if (p && effectiveRoles(p).includes(\"FT\") && rows.some((r) => r.sellerRefs.includes(s.teacherId))) ftIds.push(s.teacherId);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "what": "the pool line is never updated (insert only)",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (cur && cur.amountSatang === sh.amountMinor && cur.label === label) { res.unchanged++; continue; }",
+              "to": "if (cur) { res.unchanged++; continue; }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F4",
+      "what": "a confirmed pool line is not reported",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (cur) res.changed.push({ slipId: slip.id, sourceRef: ref,",
+              "to": "if (false as boolean) res.changed.push({ slipId: slip.id, sourceRef: ref,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F5",
+      "what": "a confirmed slip without a pool line is not listed",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "else res.skipped.push({ saleLineId: null, teacherId: sh.teacherId, reason: \"SLIP_NOT_DRAFT\", amountMinor: sh.amountMinor });",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F6",
+      "what": "an unpaid pool is not reported",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (unpaid > 0) res.poolUnpaid = unpaid;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F7",
+      "what": "a zero pool line is written",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (!cur && sh.amountMinor === 0) continue; // never write a zero pool line",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F8",
+      "what": "the pool update is counted as written",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "} else res.updatedPool++;",
+              "to": "} else res.written++;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N1",
+      "what": "no notification for a new line",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "notifyFailed += (await notifyCommission(deps.notify, { lineId: id,",
+              "to": "notifyFailed += 0 * (await notifyCommission(undefined, { lineId: id,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N2",
+      "what": "a notification for an updated pool line too",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "    } else res.updatedPool++;",
+              "to": "    } else { res.updatedPool++; notifyFailed += (await notifyCommission(deps.notify, { lineId: r.id, coach: null, day, detail: 'Full-time pool' })).failed; }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N3",
+      "what": "the notification text carries the amount",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "detail: o.product }",
+              "to": "detail: String(o.amountSatang) }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N4",
+      "what": "a notification failure is not counted",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "if (notifyFailed) res.notifyFailed = notifyFailed;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q1",
+      "what": "the SQL guard (draft only) is gone from the own insert",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "            select ${l.slipId}::uuid, 'commission'::bo.pay_line_kind, ${l.label}, ${numericFromSatang(l.amountSatang)}::numeric, 'auto'::bo.pay_line_source, ${l.sourceRef}, ${actor}\n            where ${guard(l.slipId)}\n            on conflict (slip_id, kind, source_ref) where source = 'auto' do nothing",
+              "to": "            select ${l.slipId}::uuid, 'commission'::bo.pay_line_kind, ${l.label}, ${numericFromSatang(l.amountSatang)}::numeric, 'auto'::bo.pay_line_source, ${l.sourceRef}, ${actor}\n            where true\n            on conflict (slip_id, kind, source_ref) where source = 'auto' do nothing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q2",
+      "what": "the own insert is not idempotent",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "on conflict (slip_id, kind, source_ref) where source = 'auto' do nothing",
+              "to": "on conflict (slip_id, kind, source_ref) where source = 'auto' do update set amount = excluded.amount"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q3",
+      "what": "the sale's date is read in UTC, not Bangkok",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "at time zone 'Asia/Bangkok'",
+              "to": "at time zone 'UTC'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q4",
+      "what": "the sale store reads the discount (a recompute door)",
+      "files": [
+        {
+          "file": "src/services/commission-lines.service.ts",
+          "edits": [
+            {
+              "from": "name: boItem.name, group: boItem.commissionGroup })",
+              "to": "name: boItem.name, group: boItem.commissionGroup, discountMinor: boSaleLine.discountMinor })"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R1",
+      "what": "the route is open to admins",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".post(\"/periods/:id/apply-commission\", ceo,",
+              "to": ".post(\"/periods/:id/apply-commission\", async (_c, n) => n(),"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

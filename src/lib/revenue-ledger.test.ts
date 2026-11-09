@@ -1,16 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import {
+  bahtText,
+  bangkokDate,
   buildBlock,
   CATEGORY_SEED,
   categorySeedRows,
   daysBetween,
+  ecaAmountMinor,
+  ecaRemark,
+  ECA_TERM_MAX,
+  escapeLike,
   feeFromMovements,
   feeKeys,
   followsRevenueLine,
   installmentsFit,
+  INT32_MAX,
   isValidDate,
   paymentTotals,
   PAYMENT_REF_TYPES,
+  planLabel,
+  refundAmountMinor,
+  refundKeyFor,
+  REFUND_SOURCES_LIMIT,
+  refundWithinFee,
+  sessionCounts,
   REVENUE_TYPES,
   revenueLineKeyFor,
   signOk,
@@ -195,4 +208,124 @@ describe("payments — the revenue line follows ROW 1's method only (§8.4)", ()
     expect(followsRevenueLine(1, {})).toBe(false);
     expect(followsRevenueLine(1, { method: undefined })).toBe(false);
   });
+});
+
+// ───────────────────────────────── TASK-890 — the ECA payment entry (R2.2) ─────────────────────────────────
+describe("ecaAmountMinor — price per class × students × classes per term, integer satang", () => {
+  test("the product of the three", () => {
+    expect(ecaAmountMinor(150_000, 12, 10)).toBe(18_000_000); // 1,500 ฿ × 12 × 10
+    expect(ecaAmountMinor(50_000, 1, 1)).toBe(50_000);
+    expect(ecaAmountMinor(1, 1, 1)).toBe(1);
+    expect(ecaAmountMinor(10_000, 25, 12)).toBe(3_000_000);
+  });
+  test("each factor counts (swapping any one changes the answer)", () => {
+    expect(ecaAmountMinor(2, 3, 5)).toBe(30);
+    expect(ecaAmountMinor(2, 3, 7)).toBe(42);
+    expect(ecaAmountMinor(2, 4, 5)).toBe(40);
+    expect(ecaAmountMinor(3, 3, 5)).toBe(45);
+  });
+  test("exactly INT32_MAX fits; one more does not (the column is a 32-bit int)", () => {
+    expect(INT32_MAX).toBe(2_147_483_647);
+    expect(ecaAmountMinor(INT32_MAX, 1, 1)).toBe(INT32_MAX);
+    expect(ecaAmountMinor(INT32_MAX, 2, 1)).toBeNull();
+    expect(ecaAmountMinor(1, INT32_MAX, 1)).toBe(INT32_MAX);
+    expect(ecaAmountMinor(46_341, 46_341, 1)).toBeNull(); // 2,147,488,281
+    expect(ecaAmountMinor(46_340, 46_340, 1)).toBe(2_147_395_600);
+  });
+  test("a product past 2^53 is refused, never rounded into range", () => {
+    expect(ecaAmountMinor(2 ** 31 - 1, 2 ** 31 - 1, 2 ** 31 - 1)).toBeNull();
+  });
+  test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("a factor of %p is refused in every position", (bad) => {
+    expect(ecaAmountMinor(bad, 1, 1)).toBeNull();
+    expect(ecaAmountMinor(1, bad, 1)).toBeNull();
+    expect(ecaAmountMinor(1, 1, bad)).toBeNull();
+  });
+  test("a non-number is refused", () => {
+    expect(ecaAmountMinor("100" as never, 1, 1)).toBeNull();
+    expect(ecaAmountMinor(null as never, 1, 1)).toBeNull();
+  });
+});
+
+describe("bahtText / ecaRemark — the history line's words", () => {
+  test("whole baht stay whole; fractions keep two digits", () => {
+    expect(bahtText(150_000)).toBe("1500");
+    expect(bahtText(100)).toBe("1");
+    expect(bahtText(15_050)).toBe("150.50");
+    expect(bahtText(15_005)).toBe("150.05");
+    expect(bahtText(1)).toBe("0.01");
+    expect(bahtText(99)).toBe("0.99");
+  });
+  test("the remark is '<price> ฿ × <students> students × <classes> classes'", () => {
+    expect(ecaRemark(150_000, 12, 10)).toBe("1500 ฿ × 12 students × 10 classes");
+    expect(ecaRemark(15_050, 1, 1)).toBe("150.50 ฿ × 1 students × 1 classes");
+  });
+  test("the term limit is 40", () => expect(ECA_TERM_MAX).toBe(40));
+});
+
+// ───────────────────────────────── TASK-893 — the refund (SPEC-099 §10) ─────────────────────────────────
+describe("refund key, sign and amount rule", () => {
+  test("one refund per sale: rl:refund:<type in lower case>:<id>, the type distinguishes a course from a voucher with the same id", () => {
+    expect(refundKeyFor("COURSE", "abc")).toBe("rl:refund:course:abc");
+    expect(refundKeyFor("VOUCHER", "abc")).toBe("rl:refund:voucher:abc");
+    expect(refundKeyFor("COURSE", "abc")).not.toBe(refundKeyFor("VOUCHER", "abc"));
+  });
+  test("a refund is stored NEGATIVE (revenue_line_sign_ck: REFUND < 0), and it passes the sign rule", () => {
+    expect(refundAmountMinor(95_000)).toBe(-95_000);
+    expect(signOk("REFUND", refundAmountMinor(1))).toBe(true);
+    expect(signOk("REFUND", 95_000)).toBe(false);
+  });
+  test("0 < amount <= fee: the fee itself is allowed, one satang over is not, zero / negative / fractional are not", () => {
+    expect(refundWithinFee(95_000, 95_000)).toBe(true);
+    expect(refundWithinFee(1, 95_000)).toBe(true);
+    expect(refundWithinFee(95_001, 95_000)).toBe(false);
+    expect(refundWithinFee(0, 95_000)).toBe(false);
+    expect(refundWithinFee(-5, 95_000)).toBe(false);
+    expect(refundWithinFee(10.5, 95_000)).toBe(false);
+    expect(refundWithinFee(Number.NaN, 95_000)).toBe(false);
+    expect(refundWithinFee(1, 0)).toBe(false); // a zero-fee sale has nothing to refund
+  });
+});
+
+describe("escapeLike — the search text is literal", () => {
+  test("% _ and the backslash are escaped; ordinary text and Thai are untouched", () => {
+    expect(escapeLike("50%")).toBe("50\\%");
+    expect(escapeLike("a_b")).toBe("a\\_b");
+    expect(escapeLike("a\\b")).toBe("a\\\\b");
+    expect(escapeLike("%_%")).toBe("\\%\\_\\%");
+    expect(escapeLike("น้องเอ Pim")).toBe("น้องเอ Pim");
+    expect(escapeLike("")).toBe("");
+  });
+});
+
+describe("sessionCounts — what a refund would cancel", () => {
+  const S = (status: string, date = "2026-11-20") => ({ status, date });
+  test("attended = ATTENDED + NO_SHOW (held); toCancel = PENDING + CONFIRMED + EXTENDED; cancelled / leave / paused count as neither", () => {
+    const rows = [S("ATTENDED"), S("NO_SHOW"), S("PENDING"), S("CONFIRMED"), S("EXTENDED"), S("CANCELLED"), S("SICK_LEAVE"), S("PAUSED"), S("PENDING_RESCHEDULE")];
+    expect(sessionCounts("COURSE", rows, "2026-11-09", false)).toEqual({ attended: 2, toCancel: 3 });
+  });
+  test("a COURSE end forfeits every live row (no date rule); a VOUCHER end only the future ones (today counts)", () => {
+    const rows = [S("CONFIRMED", "2026-11-01"), S("CONFIRMED", "2026-11-09"), S("PENDING", "2026-11-30")];
+    expect(sessionCounts("COURSE", rows, "2026-11-09", false).toCancel).toBe(3);
+    expect(sessionCounts("VOUCHER", rows, "2026-11-09", false).toCancel).toBe(2);
+  });
+  test("an ended plan has nothing left to cancel (the attended count stays)", () => {
+    expect(sessionCounts("COURSE", [S("ATTENDED"), S("PENDING")], "2026-11-09", true)).toEqual({ attended: 1, toCancel: 0 });
+    expect(sessionCounts("VOUCHER", [S("CONFIRMED")], "2026-11-09", true).toCancel).toBe(0);
+  });
+  test("no sessions ⇒ zeros", () => expect(sessionCounts("COURSE", [], "2026-11-09", false)).toEqual({ attended: 0, toCancel: 0 }));
+});
+
+describe("planLabel / bangkokDate / the limit", () => {
+  test("nickname, else name; Course N / Voucher N Hr; no child ⇒ just the plan", () => {
+    expect(planLabel("COURSE", { nickname: "Pim", name: "Alpha" }, 10)).toBe("Pim · Course 10");
+    expect(planLabel("COURSE", { nickname: null, name: "Alpha" }, 4)).toBe("Alpha · Course 4");
+    expect(planLabel("VOUCHER", { nickname: "  ", name: " Beta " }, 5)).toBe("Beta · Voucher 5 Hr");
+    expect(planLabel("VOUCHER", null, 15)).toBe("Voucher 15 Hr");
+  });
+  test("the sold date is the BANGKOK date: 23:30 UTC on the 8th is the 9th in Bangkok", () => {
+    expect(bangkokDate("2026-11-08T16:59:59Z")).toBe("2026-11-08");
+    expect(bangkokDate("2026-11-08T17:00:00Z")).toBe("2026-11-09");
+    expect(bangkokDate(new Date("2026-12-31T20:00:00Z"))).toBe("2027-01-01");
+  });
+  test("at most 20 sources", () => expect(REFUND_SOURCES_LIMIT).toBe(20));
 });

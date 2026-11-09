@@ -1,11 +1,13 @@
 // In-memory SalaryStore: the test double that lets the whole pay-run round trip run with no database (TASK-865 evidence).
+import type { AutoLine } from "../lib/pay-rules";
 import { CLASS_TYPES, type Line, type Period, type Profile, type SalaryStore, type Slip } from "./salary.service";
 
 let seq = 0;
 const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
 
-export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profile>; slips: Map<string, Slip>; lines: Map<string, Line>; names: Map<string, string> } {
+export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profile>; slips: Map<string, Slip>; lines: Map<string, Line>; names: Map<string, string>; systemIds: Set<string> } {
   const names = new Map<string, string>();
+  const systemIds = new Set<string>(); // test hook: teacher ids that are `is_system` ("No Teacher")
   const flRates = new Map<string, number>();
   const periods = new Map<string, Period>();
   const profiles = new Map<string, Profile>();
@@ -13,6 +15,7 @@ export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profi
   const lines = new Map<string, Line>();
   return {
     names,
+    systemIds,
     profiles,
     slips,
     lines,
@@ -102,6 +105,7 @@ export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profi
       let inserted = 0;
       let updated = 0;
       let removed = 0;
+      const insertedLines: AutoLine[] = [];
       for (const l of have) {
         const d = want.get(key(l.kind, l.sourceRef));
         if (!d) {
@@ -117,17 +121,23 @@ export function memorySalaryStore(): SalaryStore & { profiles: Map<string, Profi
         want.delete(key(l.kind, l.sourceRef));
       }
       for (const d of want.values()) {
-        const row: Line = { id: id(), slipId, kind: d.kind, label: d.label, amountSatang: d.amountSatang, source: "auto", createdBy: "auto", sourceRef: d.sourceRef };
+        const row: Line = { id: id(), slipId, kind: d.kind, label: d.label, amountSatang: d.amountSatang, source: "auto", createdBy: "auto", sourceRef: d.sourceRef, classType: d.classType ?? null };
         lines.set(row.id, row);
         inserted += 1;
+        insertedLines.push(d);
       }
-      return { inserted, updated, removed };
+      return { inserted, updated, removed, insertedLines };
     },
     async getLine(i) {
       return lines.get(i);
     },
     async deleteLine(i) {
       lines.delete(i);
+    },
+    async listEntriesPeople() {
+      return [...profiles.values()]
+        .filter((p) => p.active && names.has(p.teacherId) && !systemIds.has(p.teacherId))
+        .map((p) => ({ teacherId: p.teacherId, name: names.get(p.teacherId)!, meritEligible: p.meritEligible }));
     },
     async teacherNames(ids) {
       const out = new Map<string, string>();

@@ -1,0 +1,638 @@
+{
+  "task": "TASK-922",
+  "proves": "src/services/salary-reports.service.test.ts",
+  "tests": "src/services/salary-reports.service.test.ts",
+  "note": "REQ-120 R1.8: A = the teaching sums / weekday-weekend / roles, B = the pay row + totals, S = the service (filters, range, sessions, order, periodId), X = the Excel, G = the CEO-only gates.",
+  "mutations": [
+    {
+      "id": "A1",
+      "what": "a class's minutes are not summed (only the last day)",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "for (const t of CLASS_KEYS) minutesByClass[t] += d.byType[t];",
+              "to": "for (const t of CLASS_KEYS) minutesByClass[t] = d.byType[t];"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "Sunday counts as a weekday",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "if (isWeekend(d.date)) weekend += d.teachingMinutesTotal;",
+              "to": "if (new Date(d.date + 'T00:00:00Z').getUTCDay() === 6) weekend += d.teachingMinutesTotal;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "everything is weekday",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "if (isWeekend(d.date)) weekend += d.teachingMinutesTotal;\n    else weekday += d.teachingMinutesTotal;",
+              "to": "weekday += d.teachingMinutesTotal;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "a coach with no teaching still gets a row",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "if (totalMinutes <= 0) return null;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "the total drops a class (camp)",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "const totalMinutes = CLASS_KEYS.reduce((n, t) => n + minutesByClass[t], 0);",
+              "to": "const totalMinutes = CLASS_KEYS.filter((t) => t !== 'camp').reduce((n, t) => n + minutesByClass[t], 0);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "the totals row drops the sessions",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "    t.sessions += r.sessions;\n  }\n  return t;\n}\n\n/** Hours",
+              "to": "  }\n  return t;\n}\n\n/** Hours"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "what": "the totals row drops the weekend minutes",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "    t.weekendMinutes += r.weekendMinutes;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "what": "a PT + FL person reads as Freelance only",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "ROLE_ORDER.filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).join(\" + \")",
+              "to": "ROLE_ORDER.filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).slice(-1).join(\" + \")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A9",
+      "what": "the role order is FL first",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "const ROLE_ORDER: ReadonlyArray<\"FT\" | \"PT\" | \"FL\"> = [\"FT\", \"PT\", \"FL\"];",
+              "to": "const ROLE_ORDER: ReadonlyArray<\"FT\" | \"PT\" | \"FL\"> = [\"FL\", \"PT\", \"FT\"];"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "what": "hours are floored, not rounded",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "Math.round((minutes * 100) / 60) / 100",
+              "to": "Math.floor((minutes * 100) / 60) / 100"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "what": "other income leaves out a kind (commission)",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "const otherIncomeSatang = PAY_KINDS.reduce((n, k) => n + byKind[k], 0);",
+              "to": "const otherIncomeSatang = PAY_KINDS.filter((k) => k !== 'commission').reduce((n, k) => n + byKind[k], 0);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "what": "an unknown kind is dropped, not counted under other",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "(PAY_KINDS as readonly string[]).includes(l.kind) ? (l.kind as PayKind) : \"other\"] += l.amount;",
+              "to": "(PAY_KINDS as readonly string[]).includes(l.kind) ? (l.kind as PayKind) : \"other\"] += (PAY_KINDS as readonly string[]).includes(l.kind) ? l.amount : 0;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "what": "a same-kind line overwrites instead of adding",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "\"other\"] += l.amount;",
+              "to": "\"other\"] = l.amount;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "what": "the does-not-add-up check is gone",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "if (slip.baseAmount + otherIncomeSatang !== slip.total) throw",
+              "to": "if (false as boolean) throw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B5",
+      "what": "the row's total is recomputed (not the slip's own)",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "return { teacherId, slipStatus, baseSatang: slip.baseAmount, byKind, otherIncomeSatang, totalSatang: slip.total };",
+              "to": "return { teacherId, slipStatus, baseSatang: slip.baseAmount, byKind, otherIncomeSatang, totalSatang: slip.baseAmount + otherIncomeSatang + 1 };"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B6",
+      "what": "the totals' base is not summed",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "    t.baseSatang += r.baseSatang;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B7",
+      "what": "the totals' kind columns are not summed",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "    for (const k of PAY_KINDS) t.byKind[k] += r.byKind[k];",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B8",
+      "what": "the totals' grand total is not summed",
+      "files": [
+        {
+          "file": "src/lib/salary-reports.ts",
+          "edits": [
+            {
+              "from": "    t.totalSatang += r.totalSatang;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "what": "the system teacher / people filter is gone",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "x.active && real.has(x.teacherId) && effectiveRoles(x).some",
+              "to": "x.active && effectiveRoles(x).some"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "what": "inactive profiles are included",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "x.active && real.has(x.teacherId) && effectiveRoles(x).some",
+              "to": "real.has(x.teacherId) && effectiveRoles(x).some"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "what": "the period range ignores the stored end",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "const range = p.periodStart && p.periodEnd ? { start: p.periodStart, end: p.periodEnd } : payPeriodRange(p.year, p.month);",
+              "to": "const range = payPeriodRange(p.year, p.month + 0); void p;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "what": "the computed range fallback is gone",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "const range = p.periodStart && p.periodEnd ? { start: p.periodStart, end: p.periodEnd } : payPeriodRange(p.year, p.month);",
+              "to": "const range = { start: p.periodStart!, end: p.periodEnd! };"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "what": "the missing-rates scan is switched back on",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "const { period: p } = await deps.getPeriod(periodId, { missingRates: false }); // 404",
+              "to": "const { period: p } = await deps.getPeriod(periodId); // 404"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "what": "sessions count every row (seats, cancelled)",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "if (!(\"skipped\" in hoursReader.classifyRow(r, live))) n++;",
+              "to": "n++;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "what": "sessions count outside the range",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "const inRange = rows.filter((r) => r.date >= start && r.date <= end);",
+              "to": "const inRange = rows.slice();"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "what": "the rows are not sorted by role then id",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "rows.sort((a, b) => a._rank - b._rank || (a.teacherId < b.teacherId ? -1 : a.teacherId > b.teacherId ? 1 : 0));",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "what": "pay rows are not ordered by teacherId",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "for (const s of [...slips].sort((a, b) => (a.teacherId < b.teacherId ? -1 : a.teacherId > b.teacherId ? 1 : 0))) {",
+              "to": "for (const s of [...slips]) {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "what": "the slip status is not carried",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "rows.push(payRow(s.teacherId, s.status, await deps.getSlip(s.id), s.id));",
+              "to": "rows.push(payRow(s.teacherId, 'draft', await deps.getSlip(s.id), s.id));"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "what": "a malformed periodId is a 500, not a not-found (the router's rule is skipped)",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "return uuid(raw, \"ไม่พบงวดเงินเดือน\");",
+              "to": "return raw;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "what": "a missing periodId is accepted",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "if (!raw) throw badRequest(\"periodId is required\");",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X1",
+      "what": "formulaSafe is not applied to names",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "const nameCell = (names: Map<string, string>, id: string) => formulaSafe(names.get(id) ?? id);",
+              "to": "const nameCell = (names: Map<string, string>, id: string) => names.get(id) ?? id;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X2",
+      "what": "an unknown name does not fall back to the id",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "formulaSafe(names.get(id) ?? id); // the id when the lookup finds none",
+              "to": "formulaSafe(names.get(id) ?? ''); // the id when the lookup finds none"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X3",
+      "what": "baht cells are written as satang",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "x.baseSatang / 100, ...PAY_KINDS.map((k) => x.byKind[k] / 100), x.otherIncomeSatang / 100, x.totalSatang / 100]",
+              "to": "x.baseSatang, ...PAY_KINDS.map((k) => x.byKind[k]), x.otherIncomeSatang, x.totalSatang]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X4",
+      "what": "the pay Excel has no totals row",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "  const t = withFormat(ws.addRow([\"Total\", \"\", r.totals.baseSatang / 100,",
+              "to": "  const t = withFormat(ws.addRow([\"Totalx\", \"\", r.totals.baseSatang / 100,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X5",
+      "what": "money cells have no number format",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "row.getCell(c).numFmt = money;",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X6",
+      "what": "the file is cacheable",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "\"Cache-Control\": \"no-store\"",
+              "to": "\"Cache-Control\": \"public\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X7",
+      "what": "the filename drops the month",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "`salary-${kind}-${p.year}-${String(p.month).padStart(2, \"0\")}.xlsx`",
+              "to": "`salary-${kind}-${p.year}.xlsx`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X8",
+      "what": "the teaching Excel drops a class column",
+      "files": [
+        {
+          "file": "src/services/salary-reports.service.ts",
+          "edits": [
+            {
+              "from": "\"Private (h)\", \"Duo (h)\", \"Group (h)\", \"ECA (h)\", \"Camp (h)\"",
+              "to": "\"Private (h)\", \"Duo (h)\", \"Group (h)\", \"ECA (h)\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the teaching report is open to admins",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".get(\"/reports/teaching\", ceo,",
+              "to": ".get(\"/reports/teaching\", requireRole(\"ceo\", \"admin\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the pay report is open to admins",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".get(\"/reports/pay\", ceo,",
+              "to": ".get(\"/reports/pay\", requireRole(\"ceo\", \"admin\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "what": "the teaching Excel has no role gate",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".get(\"/reports/teaching.xlsx\", ceo,",
+              "to": ".get(\"/reports/teaching.xlsx\", async (_c, n) => n(),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G4",
+      "what": "the pay Excel has no role gate",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".get(\"/reports/pay.xlsx\", ceo,",
+              "to": ".get(\"/reports/pay.xlsx\", async (_c, n) => n(),"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

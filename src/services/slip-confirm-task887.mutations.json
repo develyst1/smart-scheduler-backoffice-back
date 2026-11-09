@@ -1,0 +1,518 @@
+{
+  "task": "TASK-887",
+  "proves": "src/services/slip-confirm.service.test.ts",
+  "tests": "src/services/slip-confirm.service.test.ts",
+  "note": "REQ-120 R1.5 / SPEC-102 §5-E4: S = the conditional store (two candidates are EQUIVALENT and were dropped: the up-front LOCKED check, which the re-read after the conditional update duplicates, and a passthrough body, which the service never reads), C = the coach confirm, L = the unconfirmed list, A = the internal read, B = the remind-now call, G = the route gates, I = the fail-closed internal auth.",
+  "mutations": [
+    {
+      "id": "S1",
+      "what": "the memory store's conditional update ignores the status (moves a locked / confirmed slip too)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.store.ts",
+          "edits": [
+            {
+              "from": "if (!s || s.status !== \"draft\") return false; // the ONE condition",
+              "to": "if (!s) return false;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "what": "the memory store's conditional update never writes",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.store.ts",
+          "edits": [
+            {
+              "from": "      s.status = \"confirmed\";\n      store.writes++;",
+              "to": "      store.writes++;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C1",
+      "what": "no teacherId on the token is not refused",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "  if (!teacherId) throw new ApiException(403, \"NO_TEACHER\", NO_TEACHER_MSG);",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "what": "the slip is resolved from an id in the BODY first (not the token only)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "const teacherId = user.teacherId;",
+              "to": "const teacherId = (body as any).teacherId ?? user.teacherId;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "what": "a locked slip found on the re-read is treated as confirmed (the race answers 200)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "    if (now2 === \"locked\") throw conflict(\"LOCKED\", LOCKED_MSG);\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "what": "no slip is not told apart (the null case proceeds)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "  if (\"slip\" in before) throw new ApiException(404, \"NO_SLIP\", NO_SLIP_MSG);\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "what": "the answer is the stale pre-confirm slip",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "  return service.mySlip(teacherId, body.year, body.month);\n}\n\n// ───────────── the unconfirmed list (E4b)",
+              "to": "  return before;\n}\n\n// ───────────── the unconfirmed list (E4b)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "what": "a vanished slip on the re-read is treated as confirmed",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "    if (now2 === null) throw new ApiException(404, \"NO_SLIP\", NO_SLIP_MSG);\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L1",
+      "what": "a CONFIRMED slip is listed as unconfirmed",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "else if (st === \"draft\") out.push(",
+              "to": "else if (st === \"draft\" || st === \"confirmed\") out.push("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "what": "a coach with no slip yet is not listed",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "if (st === undefined) out.push({ teacherId: p.teacherId, name: p.name, status: \"none\" });\n    else if",
+              "to": "if (st === undefined) void 0;\n    else if"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L3",
+      "what": "the list carries the base salary",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "out.push({ teacherId: p.teacherId, name: p.name, status: \"draft\" });",
+              "to": "out.push({ teacherId: p.teacherId, name: p.name, status: \"draft\", baseAmount: 1 } as any);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A1",
+      "what": "the date match ignores the period's end",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "return date >= r.start && date <= r.end;",
+              "to": "return date >= r.start;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "what": "the date match ignores the period's start",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "return date >= r.start && date <= r.end;",
+              "to": "return date <= r.end;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "what": "teacherIds includes the no-slip coaches (not draft only)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "targets.filter((t) => t.status === \"draft\").map((t) => t.teacherId).sort()",
+              "to": "targets.map((t) => t.teacherId).sort()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "what": "a malformed date is not refused",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "  if (!isRealDate(date)) throw badRequest(\"date must be a real date, YYYY-MM-DD\");\n  const periods",
+              "to": "  const periods"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "what": "isRealDate lets an impossible month through to a 500",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;",
+              "to": "return new Date(t).toISOString().slice(0, 10) === d;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "what": "the confirm-day rule is gone (31 Oct falls to November)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "periods.find((p: { lockAt: string }) => bangkokDay(p.lockAt) === date) ??\n    periods.find(",
+              "to": "periods.find("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "what": "the lock day is read as a UTC date, not Bangkok",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "new Date(iso).getTime() + 7 * 3_600_000",
+              "to": "new Date(iso).getTime()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "what": "the range fallback is gone (a non-lock day finds nothing)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": ") ??\n    periods.find((p: { year",
+              "to": ") ??\n    [].find((p: { year"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "what": "remind-now calls with only the URL set (a missing secret is sent empty)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "if (!base || !secret) return \"NOT_CONFIGURED\";",
+              "to": "if (!base) return \"NOT_CONFIGURED\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "what": "the body also carries teacherIds",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "body: JSON.stringify({ periodId }),",
+              "to": "body: JSON.stringify({ periodId, teacherIds: [] }),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "what": "the secret rides in the wrong header",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "\"x-internal-secret\": secret",
+              "to": "\"x-service-token\": secret"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "what": "a network error is reported as NOT_CONFIGURED",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "  } catch {\n    return \"FAILED\";\n  }\n}\n\n/** `POST /salary/periods/:id/remind`",
+              "to": "  } catch {\n    return \"NOT_CONFIGURED\";\n  }\n}\n\n/** `POST /salary/periods/:id/remind`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B5",
+      "what": "SB's result is not relayed (always FAILED)",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "return body && typeof body === \"object\" && !Array.isArray(body) ? (body as Record<string, unknown>) : \"FAILED\";",
+              "to": "return \"FAILED\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B6",
+      "what": "a non-200 is relayed as if it were a result",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "if (res.status !== 200) return \"FAILED\";",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B7",
+      "what": "the call has no timeout",
+      "files": [
+        {
+          "file": "src/services/slip-confirm.service.ts",
+          "edits": [
+            {
+              "from": "      signal: AbortSignal.timeout(5000),\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the coach confirm is closed to coaches",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".post(\"/my-slip/confirm\", requireRole(\"ceo\", \"admin\", \"coach\"),",
+              "to": ".post(\"/my-slip/confirm\", requireRole(\"ceo\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the remind route is open to admins",
+      "files": [
+        {
+          "file": "src/routes/salary.ts",
+          "edits": [
+            {
+              "from": ".post(\"/periods/:id/remind\", ceo,",
+              "to": ".post(\"/periods/:id/remind\", requireRole(\"ceo\", \"admin\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I1",
+      "what": "the internal route fails OPEN when SERVICE_TOKEN is unset",
+      "files": [
+        {
+          "file": "src/routes/salary-internal.ts",
+          "edits": [
+            {
+              "from": "  if (!given || !expected) return false;",
+              "to": "  if (!expected) return true;\n  if (!given) return false;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I2",
+      "what": "the internal route accepts a token PREFIX",
+      "files": [
+        {
+          "file": "src/routes/salary-internal.ts",
+          "edits": [
+            {
+              "from": "return a.length === b.length && timingSafeEqual(a, b);",
+              "to": "return given.startsWith(expected);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I3",
+      "what": "the internal route reads the wrong header",
+      "files": [
+        {
+          "file": "src/routes/salary-internal.ts",
+          "edits": [
+            {
+              "from": "c.req.header(\"X-Service-Token\")",
+              "to": "c.req.header(\"Authorization\")"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "I4",
+      "what": "the internal route has no guard",
+      "files": [
+        {
+          "file": "src/routes/salary-internal.ts",
+          "edits": [
+            {
+              "from": "new Hono().use(\"*\", strictServiceToken).get(",
+              "to": "new Hono().get("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M1",
+      "what": "the internal read is not mounted in the api",
+      "files": [
+        {
+          "file": "src/routes/api.ts",
+          "edits": [
+            {
+              "from": "  .route(\"/internal/salary\", internalSalaryRoutes)\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "what": "the internal read is mounted at the wrong path",
+      "files": [
+        {
+          "file": "src/routes/api.ts",
+          "edits": [
+            {
+              "from": ".route(\"/internal/salary\", internalSalaryRoutes)",
+              "to": ".route(\"/salary-internal\", internalSalaryRoutes)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

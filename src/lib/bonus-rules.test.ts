@@ -7,6 +7,7 @@ import {
   DEFAULT_RULES,
   isRenewalPair,
   monthWindow,
+  windowBounds,
   resolveCoachShares,
   type BonusRules,
   type PrevRef,
@@ -247,6 +248,55 @@ describe("the month a bonus falls in = the PURCHASE's created_at, in Bangkok tim
   });
   test.each(["2026-13", "2026-00", "26-10", "2026-1", "2026-10-01", "", "october"])("monthWindow(%p) throws", (bad) => {
     expect(() => monthWindow(bad)).toThrow();
+  });
+});
+
+// 🔻 TASK-867 rework (DECISIONS row 18 / R1.4): the window may be the pay PERIOD — an inclusive Bangkok DATE range. The 863
+// boundary tests above stay (the month form is kept for old callers); these are the same boundaries moved to the period edges.
+describe("a date-range window (the R1.4 pay period 30/9 – 30/10)", () => {
+  const OCT = { from: "2026-09-30", to: "2026-10-30" };
+  const at = (iso: string) => withTrial({ createdAt: iso });
+  const hit = (iso: string, w: { from: string; to: string }) => bonus50Candidates([at(iso)], rules(), w).length === 1;
+
+  test("30/9 00:00 Bangkok is the FIRST instant of October's period; 29/9 23:59 is September's", () => {
+    expect(hit("2026-09-29T17:00:00Z", OCT)).toBe(true); // 30/9 00:00 +07
+    expect(hit("2026-09-29T16:59:00Z", OCT)).toBe(false); // 29/9 23:59 +07
+  });
+  test("30/10 23:30 Bangkok is the LAST of October's period; 31/10 00:00 is November's", () => {
+    expect(hit("2026-10-30T16:30:00Z", OCT)).toBe(true);
+    expect(hit("2026-10-30T17:00:00Z", OCT)).toBe(false); // 31/10 00:00 +07
+  });
+  test("31/10 is NOT October's but is November's (31/10 – 29/11)", () => {
+    const NOV = { from: "2026-10-31", to: "2026-11-29" };
+    expect(hit("2026-10-31T05:00:00Z", OCT)).toBe(false);
+    expect(hit("2026-10-31T05:00:00Z", NOV)).toBe(true);
+    expect(hit("2026-09-30T05:00:00Z", { from: "2026-08-31", to: "2026-09-29" })).toBe(false); // 30/9 is not September's
+  });
+  test("Bonus 100 uses the same window", () => {
+    const r = (iso: string) => renewal("COURSE", "COURSE", {}, { createdAt: iso });
+    expect(bonus100Candidates([r("2026-09-30T05:00:00Z")], rules(), OCT)).toHaveLength(1);
+    expect(bonus100Candidates([r("2026-10-31T05:00:00Z")], rules(), OCT)).toEqual([]);
+  });
+  test("a one-day range is inclusive on both ends", () => {
+    expect(hit("2026-10-14T05:00:00Z", { from: "2026-10-14", to: "2026-10-14" })).toBe(true);
+    expect(hit("2026-10-13T16:59:00Z", { from: "2026-10-14", to: "2026-10-14" })).toBe(false);
+  });
+  test("windowBounds(range) = [00:00 of from, 00:00 after to) in UTC+7; the month form is unchanged", () => {
+    const w = windowBounds(OCT);
+    expect(w.start.toISOString()).toBe("2026-09-29T17:00:00.000Z");
+    expect(w.end.toISOString()).toBe("2026-10-30T17:00:00.000Z");
+    expect(windowBounds("2026-10")).toEqual(monthWindow("2026-10"));
+    expect(windowBounds({ from: "2026-12-30", to: "2026-12-31" }).end.toISOString()).toBe("2026-12-31T17:00:00.000Z");
+  });
+  test.each([
+    [{ from: "2026-10-30", to: "2026-09-30" }],
+    [{ from: "2026-02-30", to: "2026-03-01" }],
+    [{ from: "2026-9-30", to: "2026-10-30" }],
+    [{ from: "", to: "2026-10-30" }],
+    [{ from: "2026-09-30" }],
+    [null],
+  ])("windowBounds(%p) throws", (bad) => {
+    expect(() => windowBounds(bad as never)).toThrow();
   });
 });
 

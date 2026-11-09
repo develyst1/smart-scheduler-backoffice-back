@@ -12,7 +12,8 @@ import {
   skippedMinutes,
   type TimetableRow,
 } from "./hours-reader";
-import { day, EDGE_RANGE, EDGE_ROWS, FIXTURES, row } from "./hours-reader.fixtures";
+import { day, EDGE_RANGE, EDGE_ROWS, FIXTURES, kid, row } from "./hours-reader.fixtures";
+import { childrenTaught, nameOf } from "./hours-reader";
 
 // TASK-872 — the hours reader's rules, on fixtures of real timetable shapes. No database: `bucketMinutes` is pure and
 // `readHours` is driven through its injectable `collect`. The one SELECT (`collectRows`) is proven on sid, read-only.
@@ -165,7 +166,7 @@ describe("readHours — the contract (SPEC-101 §5)", () => {
   });
   test("the output keys are exactly the contract's", async () => {
     const [d] = await readHours(TEACHER, "2026-10-01", "2026-10-31", async () => [row()]);
-    expect(Object.keys(d!).sort()).toEqual(["byType", "date", "teachingMinutesTotal"]);
+    expect(Object.keys(d!).sort()).toEqual(["byType", "date", "students", "teachingMinutesTotal"]); // TASK-884 added `students`; the other three are TASK-872's
     expect(Object.keys(d!.byType).sort()).toEqual([...CLASS_TYPES].sort());
   });
 
@@ -207,5 +208,180 @@ describe("read-only by construction (TASK-872 step 2)", () => {
   });
   test("SB's tables are never given to drizzle-kit: drizzle.config.ts does not name pub-timetable", async () => {
     expect(await read("../../drizzle.config.ts")).not.toContain("pub-timetable");
+  });
+});
+
+// ───────────────────────────────── TASK-884 — R1.6: who was taught, per day and class type ─────────────────────────────────
+// Invented names only. `students` is LABELS: every test below that touches money-shaped output proves the minutes did not move.
+
+describe("TASK-884 — the minutes are exactly TASK-872's (the names add, they never change a number)", () => {
+  const strip = (days: ReturnType<typeof bucketMinutes>) => days.map(({ date, byType, teachingMinutesTotal }) => ({ date, byType, teachingMinutesTotal }));
+
+  test.each(FIXTURES.map((f) => [f.name, f] as const))("fixture %s: byType / teachingMinutesTotal identical with children attached to every row", (_n, f) => {
+    const withKids = f.rows.map((r, i) => ({ ...r, student: kid(`s${i}`, `Child ${i}`, `C${i}`), coStudent: r.coStudentId ? kid(`co${i}`, `Second ${i}`) : null }));
+    expect(strip(bucketMinutes(withKids))).toEqual(strip(f.expect));
+    expect(strip(bucketMinutes(f.rows))).toEqual(strip(f.expect));
+  });
+  test("the same rows with and without children are the same minutes day by day (the EDGE rows too)", () => {
+    const withKids = EDGE_ROWS.map((r, i) => ({ ...r, student: kid(`e${i}`, `Edge ${i}`) }));
+    expect(strip(bucketMinutes(withKids))).toEqual(strip(bucketMinutes(EDGE_ROWS)));
+  });
+  test("a counted row without a child is still counted", () => {
+    expect(bucketMinutes([row({ student: null })])[0].teachingMinutesTotal).toBe(60);
+  });
+});
+
+describe("TASK-884 — the names", () => {
+  const A = kid("a", "Alpha Anan", "Pim");
+  const B = kid("b", "Bravo Boon", "Ben");
+  const C = kid("c", "Charlie Chai", "Chai");
+  const E = kid("e", "Delta Dao", null);
+  const names = (rows: TimetableRow[]) => bucketMinutes(rows)[0].students;
+
+  test("a Private: one name", () => {
+    expect(names([row({ student: A })])).toEqual([{ classType: "private", names: ["Pim"] }]);
+  });
+  test("a DUO course (a second child): two names, each its own entry, never joined", () => {
+    const got = names([row({ coStudentId: "b", student: A, coStudent: B })]);
+    expect(got).toEqual([{ classType: "duo", names: ["Ben", "Pim"] }]); // same start, so ordered by name: "Ben" before "Pim"
+    expect(JSON.stringify(got)).not.toContain("&");
+  });
+  test("a nickname-less child falls back to the name; a blank nickname too; both trimmed", () => {
+    expect(names([row({ student: E })])[0].names).toEqual(["Delta Dao"]);
+    expect(names([row({ student: kid("x", "  Echo Eak ", "   ") })])[0].names).toEqual(["Echo Eak"]);
+    expect(names([row({ student: kid("y", "Name", " Nick ") })])[0].names).toEqual(["Nick"]);
+    expect(nameOf(kid("z", "Zed Zan", null))).toBe("Zed Zan");
+  });
+  test("a GROUP lists its LIVE seats: 3 live + 1 cancelled seat gives 3 names, not 4, and not the GROUP row own student", () => {
+    const g = row({ id: "g-1", bookingType: "GROUP", otherKind: "GROUP", student: kid("own", "Owner Child", "Own") });
+    const rows = [
+      g,
+      row({ groupId: "g-1", student: A }),
+      row({ groupId: "g-1", student: B }),
+      row({ groupId: "g-1", student: C, status: "CONFIRMED" }),
+      row({ groupId: "g-1", student: kid("dead", "Dead Seat", "Dead"), status: "CANCELLED" }),
+    ];
+    const got = names(rows);
+    expect(bucketMinutes(rows)[0].byType.group).toBe(60);
+    expect(got).toEqual([{ classType: "group", names: ["Ben", "Chai", "Pim"] }]);
+    expect(got[0].names).not.toContain("Own");
+    expect(got[0].names).not.toContain("Dead");
+  });
+  test("a seat on sick leave / paused / pending is not a child taught that day either", () => {
+    const rows = [
+      row({ id: "g-2", bookingType: "GROUP", otherKind: "GROUP" }),
+      row({ groupId: "g-2", student: A }),
+      row({ groupId: "g-2", student: B, status: "SICK_LEAVE" }),
+      row({ groupId: "g-2", student: C, status: "PAUSED" }),
+      row({ groupId: "g-2", student: E, status: "PENDING" }),
+    ];
+    expect(names(rows)).toEqual([{ classType: "group", names: ["Pim"] }]);
+  });
+  test("an EMPTY GROUP (no live seat) is not counted: no entry, no name, no minutes", () => {
+    const rows = [row({ id: "g-3", bookingType: "GROUP", otherKind: "GROUP", student: A }), row({ groupId: "g-3", student: B, status: "CANCELLED" })];
+    expect(bucketMinutes(rows)).toEqual([]);
+  });
+  test("a live seat that itself carries a second child (the legacy DUO-seat shape) lists BOTH children", () => {
+    const rows = [row({ id: "g-9", bookingType: "GROUP", otherKind: "DUO" }), row({ groupId: "g-9", coStudentId: "b", student: A, coStudent: B })];
+    expect(names(rows)).toEqual([{ classType: "duo", names: ["Ben", "Pim"] }]);
+  });
+  test("a DUO group row (kind DUO) lists its two seated children under duo", () => {
+    const rows = [row({ id: "g-4", bookingType: "GROUP", otherKind: "DUO" }), row({ groupId: "g-4", student: A }), row({ groupId: "g-4", student: B })];
+    expect(names(rows)).toEqual([{ classType: "duo", names: ["Ben", "Pim"] }]);
+  });
+  test("a group extra coach sees the same seats (they are another coach rows, passed in by collectRows)", async () => {
+    const rows = [row({ id: "g-5", bookingType: "GROUP", otherKind: "GROUP" }), row({ groupId: "g-5", student: A })];
+    const [d] = await readHours(OTHER_TEACHER, "2026-10-01", "2026-10-31", async () => rows);
+    expect(d.students).toEqual([{ classType: "group", names: ["Pim"] }]);
+  });
+  test("the same child twice in a day is listed ONCE, while all the hours still count", () => {
+    const rows = [
+      row({ student: A, startTime: "09:00:00", endTime: "10:00:00" }),
+      row({ student: A, startTime: "15:00:00", endTime: "16:00:00" }),
+      row({ student: B, startTime: "11:00:00", endTime: "12:00:00" }),
+    ];
+    expect(names(rows)).toEqual([{ classType: "private", names: ["Pim", "Ben"] }]);
+    expect(bucketMinutes(rows)[0].byType.private).toBe(180);
+  });
+  test("one child in two class types the same day appears under each type (de-dup is within a class type)", () => {
+    const rows = [row({ student: A }), row({ id: "g-6", bookingType: "GROUP", otherKind: "GROUP", startTime: "13:00:00", endTime: "14:00:00" }), row({ groupId: "g-6", student: A })];
+    expect(names(rows)).toEqual([
+      { classType: "private", names: ["Pim"] },
+      { classType: "group", names: ["Pim"] },
+    ]);
+  });
+  test("order: by the child FIRST lesson start that day, then by name, whatever order the rows arrive in", () => {
+    const rows = [
+      row({ student: C, startTime: "14:00:00", endTime: "15:00:00" }),
+      row({ student: A, startTime: "09:00:00", endTime: "10:00:00" }),
+      row({ student: B, startTime: "09:00:00", endTime: "10:00:00" }), // same start as A, so by name: "Ben" before "Pim"
+      row({ student: C, startTime: "08:00:00", endTime: "08:30:00" }), // C FIRST start is 08:00, so C leads
+    ];
+    expect(names(rows)[0].names).toEqual(["Chai", "Ben", "Pim"]);
+    expect(names([...rows].reverse())[0].names).toEqual(["Chai", "Ben", "Pim"]);
+  });
+  test("entries are in CLASS_TYPES order, one per type taught, and a day lists only the types it taught", () => {
+    const rows = [
+      row({ id: "e1", bookingType: "OTHER", otherKind: "ECA", student: B, startTime: "08:00:00", endTime: "09:00:00" }),
+      row({ student: A, startTime: "10:00:00", endTime: "11:00:00" }),
+      row({ coStudentId: "c", student: C, coStudent: E, startTime: "12:00:00", endTime: "13:00:00" }),
+    ];
+    expect(names(rows).map((s) => s.classType)).toEqual(["private", "duo", "eca"]);
+    expect(CLASS_TYPES.filter((t) => bucketMinutes(rows)[0].byType[t] > 0)).toEqual(names(rows).map((s) => s.classType));
+  });
+  test("step 0: an ECA row carries the ONE student it was typed with (SB validation.ts:277), named; a title-only ECA has none, names [] and nothing invented", () => {
+    expect(names([row({ bookingType: "OTHER", otherKind: "ECA", student: A })])).toEqual([{ classType: "eca", names: ["Pim"] }]);
+    expect(names([row({ bookingType: "OTHER", otherKind: "ECA", student: null })])).toEqual([{ classType: "eca", names: [] }]);
+  });
+  test("step 0: the derived CAMP grid rows carry no child (the kids live in camp_days): names [] and the minutes still count", () => {
+    const got = bucketMinutes([row({ bookingType: "OTHER", otherKind: "CAMP", startTime: "10:00:00", endTime: "15:00:00" })]);
+    expect(got[0].byType.camp).toBe(300);
+    expect(got[0].students).toEqual([{ classType: "camp", names: [] }]);
+  });
+  test("a skipped row adds no name: not-a-class-type (FREE / no kind), a yielded group, a non-counted status", () => {
+    const rows = [
+      row({ bookingType: "OTHER", otherKind: "FREE", student: A }),
+      row({ bookingType: "OTHER", otherKind: null, student: B }),
+      row({ id: "g-7", bookingType: "GROUP", otherKind: "GROUP", slotYieldedAt: "2026-10-01T00:00:00Z" }),
+      row({ groupId: "g-7", student: C }),
+      row({ student: E, status: "CANCELLED" }),
+    ];
+    expect(bucketMinutes(rows)).toEqual([]);
+  });
+  test("a day with teaching but no children anywhere still has its entry per type (names [])", () => {
+    expect(names([row()])).toEqual([{ classType: "private", names: [] }]);
+  });
+  test("days stay ascending and each day has its own names", () => {
+    const got = bucketMinutes([row({ date: "2026-10-15", student: B }), row({ date: "2026-10-14", student: A })]);
+    expect(got.map((d) => [d.date, d.students[0].names])).toEqual([["2026-10-14", ["Pim"]], ["2026-10-15", ["Ben"]]]);
+  });
+  test("the input rows are untouched and a second call gives the same answer", () => {
+    const rows = [row({ student: A }), row({ student: B, startTime: "12:00:00", endTime: "13:00:00" })];
+    const before = JSON.stringify(rows);
+    const first = bucketMinutes(rows);
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(bucketMinutes(rows)).toEqual(first);
+  });
+  test("childrenTaught: a GROUP row own child is never its names; a lesson row has its child and the second child", () => {
+    const g = row({ id: "g-8", bookingType: "GROUP", otherKind: "GROUP", student: A });
+    expect(childrenTaught(g, new Map())).toEqual([]);
+    expect(childrenTaught(row({ student: A, coStudent: B }), new Map())).toEqual([A, B]);
+    expect(childrenTaught(row({}), new Map())).toEqual([]);
+  });
+});
+
+describe("TASK-884 — the database side stays read-only and PII-narrow", () => {
+  const read = (p: string) => Bun.file(new URL(p, import.meta.url)).text();
+  test("the students declaration holds id / name / nickname only (no parent, phone or LINE id), and no is_system", async () => {
+    const src = await read("../db/pub-timetable.ts");
+    const block = /export const ttStudents = pgTable\("students", \{([\s\S]*?)\}\);/.exec(src)![1];
+    expect([...block.matchAll(/(\w+): (?:uuid|text)\(/g)].map((m) => m[1])).toEqual(["id", "name", "nickname"]);
+    expect(block).not.toMatch(/parent|phone|line|is_system|birth|note/i);
+  });
+  test("collectRows joins the children into its two SELECTs (left joins, no extra query)", async () => {
+    const src = await read("./hours-reader.ts");
+    expect((src.match(/\.leftJoin\(ttStudents/g) ?? []).length).toBe(2);
+    expect((src.match(/\.leftJoin\(coStudents/g) ?? []).length).toBe(2);
+    expect((src.match(/\.select\(columns\)/g) ?? []).length).toBe(2);
   });
 });

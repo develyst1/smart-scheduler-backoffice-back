@@ -1,0 +1,368 @@
+{
+  "task": "TASK-928",
+  "proves": "src/services/stock-sales.test.ts",
+  "tests": "src/services/stock-sales.test.ts",
+  "note": "REQ-120 R3.8 Sales History: W = the window, D = the Bangkok day edges, F = filters / order / limit / customers, M = the row shape (no money), G = the gates.",
+  "mutations": [
+    {
+      "id": "W1",
+      "what": "a non-real day is accepted",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "const span = daysBetween(query.from, query.to);\n  if (span === null) throw badRequest(\"from / to ต้องเป็นวันที่ YYYY-MM-DD ที่มีจริง\");\n  if (span < 0) throw badRequest(\"from ต้องไม่เกิน to\");\n  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer",
+              "to": "const span = daysBetween(query.from, query.to) ?? 0;\n  if (span < 0) throw badRequest(\"from ต้องไม่เกิน to\");\n  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W2",
+      "what": "from after to is accepted",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "  if (span < 0) throw badRequest(\"from ต้องไม่เกิน to\");\n  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer",
+              "to": "  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W3",
+      "what": "the 366-day cap is gone (in the sales read)",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer",
+              "to": "  const term = query.q?.trim();\n  const customer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W4",
+      "what": "the cap is 367 days",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "  if (span > 365) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer",
+              "to": "  if (span > 366) throw badRequest(\"ช่วงวันที่ต้องไม่เกิน 366 วัน\");\n  const term = query.q?.trim();\n  const customer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "what": "the day is the UTC day",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "const SALE_DAY = sql`to_char(${boSale.soldAt} at time zone 'Asia/Bangkok', 'YYYY-MM-DD')`;",
+              "to": "const SALE_DAY = sql`to_char(${boSale.soldAt} at time zone 'UTC', 'YYYY-MM-DD')`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "what": "the window's end is exclusive",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "${SALE_DAY} >= ${query.from} and ${SALE_DAY} <= ${query.to}",
+              "to": "${SALE_DAY} >= ${query.from} and ${SALE_DAY} < ${query.to}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D3",
+      "what": "the window's start is exclusive",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "${SALE_DAY} >= ${query.from} and ${SALE_DAY} <= ${query.to}",
+              "to": "${SALE_DAY} > ${query.from} and ${SALE_DAY} <= ${query.to}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F1",
+      "what": "not only stock products",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "    eq(boItem.externalSource, STOCK_SOURCE), // stock products only\n    sql`${SALE_DAY}",
+              "to": "    sql`true`, // stock products only\n    sql`${SALE_DAY}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "what": "oldest first",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": ".orderBy(desc(boSale.soldAt), desc(boSaleLine.id))",
+              "to": ".orderBy(asc(boSale.soldAt), asc(boSaleLine.id))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "what": "the limit is ignored",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "    .orderBy(desc(boSale.soldAt), desc(boSaleLine.id))\n    .limit(query.limit);",
+              "to": "    .orderBy(desc(boSale.soldAt), desc(boSaleLine.id))\n    .limit(100000);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F4",
+      "what": "the search does not cover the buyer",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": ", ilike(boSale.buyerRef, `%${escapeLike(term)}%`)) : undefined,\n        customer",
+              "to": ") : undefined,\n        customer"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F5",
+      "what": "the search is not escaped",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "ilike(boItem.name, `%${escapeLike(term)}%`), ilike(boItem.externalRef, `%${escapeLike(term)}%`), ilike(boSale.buyerRef",
+              "to": "ilike(boItem.name, `%${term}%`), ilike(boItem.externalRef, `%${term}%`), ilike(boSale.buyerRef"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F6",
+      "what": "the customer filter is ignored",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "customer ? eq(boSale.buyerRef, customer) : undefined,",
+              "to": "undefined,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F7",
+      "what": "the customers list ignores the window",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": ".where(and(inWindow, sql`${boSale.buyerRef} is not null",
+              "to": ".where(and(sql`true`, sql`${boSale.buyerRef} is not null"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F8",
+      "what": "the customers list includes blank buyers",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "is not null and btrim(${boSale.buyerRef}) <> ''",
+              "to": "is not null"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M1",
+      "what": "the row carries the line's price",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "qty: boSaleLine.qty, buyer: boSale.buyerRef,",
+              "to": "qty: boSaleLine.qty, unitPriceMinor: boSaleLine.unitPriceMinor, buyer: boSale.buyerRef,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "what": "the row carries a money amount",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "customer: r.buyer, payment: r.method, branch: r.branch }))",
+              "to": "customer: r.buyer, payment: r.method, branch: r.branch, amountMinor: 0 }))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "what": "the customer is not returned",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "customer: r.buyer, payment: r.method,",
+              "to": "payment: r.method,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "what": "the payment is not returned",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "customer: r.buyer, payment: r.method, branch: r.branch }))",
+              "to": "customer: r.buyer, branch: r.branch }))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "what": "the code is not defaulted",
+      "files": [
+        {
+          "file": "src/services/stock-read.service.ts",
+          "edits": [
+            {
+              "from": "code: r.code ?? \"\",",
+              "to": "code: r.code as string,"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the sales read has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/sales\", adminAuth,",
+              "to": ".get(\"/sales\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the sales read is CEO-only",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/sales\", adminAuth,",
+              "to": ".get(\"/sales\", requireRole(\"ceo\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "what": "the limit cap is lifted",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "limit: z.coerce.number().int().min(1).max(SALES_LIMIT_MAX).default(200),",
+              "to": "limit: z.coerce.number().int().min(1).default(200),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G4",
+      "what": "the from/to are optional",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "  from: z.string().regex(DAY_RE),\n  to: z.string().regex(DAY_RE),",
+              "to": "  from: z.string().regex(DAY_RE).default('2000-01-01'),\n  to: z.string().regex(DAY_RE).default('2000-01-02'),"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

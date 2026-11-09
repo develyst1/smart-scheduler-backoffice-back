@@ -1,0 +1,653 @@
+{
+  "task": "TASK-919",
+  "proves": "src/services/low-stock.service.test.ts",
+  "tests": "src/services/low-stock.service.test.ts",
+  "note": "REQ-120 R3.7: T = the thresholds validation, R = the low rule, W = the ISO week / key, X = the text, S = the service + the Monday job, G = the route / job gates, P = the .ps1.",
+  "mutations": [
+    {
+      "id": "T1",
+      "what": "a negative level is accepted",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "!Number.isInteger(v) || v < 0 || v > MAX_LEVEL",
+              "to": "!Number.isInteger(v) || v > MAX_LEVEL"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "what": "a fractional level is accepted",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "!Number.isInteger(v) || v < 0",
+              "to": "v < 0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T4",
+      "what": "a null level is refused",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (v === null) { value[key] = null; continue; }",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T5",
+      "what": "case-insensitive repeats are accepted",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (seen.has(k)) {",
+              "to": "if (false as boolean) {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T6",
+      "what": "keys are not trimmed",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "const key = raw.trim();",
+              "to": "const key = raw;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T7",
+      "what": "an empty type name is accepted",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (!key) { issues.push({ key: raw, message: \"a type name is empty\" }); continue; }",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T8",
+      "what": "only the first problem is reported",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "issues.push({ key, message: `the level of",
+              "to": "return { value, issues: [{ key, message: `the level of"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T9",
+      "what": "the 200-type cap is gone",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (entries.length > MAX_TYPES) return",
+              "to": "if (false as boolean) return"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T10",
+      "what": "a default is wrong (Safety 2)",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "Safety: 1, Miller: 5",
+              "to": "Safety: 2, Miller: 5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R1",
+      "what": "exactly at the level is not low",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (t === undefined || p.qty > t) continue;",
+              "to": "if (t === undefined || p.qty >= t) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "what": "a category with no threshold counts as 0 (low at 0)",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (t === undefined || p.qty > t) continue;",
+              "to": "if ((t ?? 0) < p.qty) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "what": "a null level is treated as 0",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (v !== null && v !== undefined) level.set(norm(k), v);",
+              "to": "level.set(norm(k), v ?? 0);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "what": "the category match is case-sensitive",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "const norm = (s: string) => s.trim().toLowerCase();",
+              "to": "const norm = (s: string) => s;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R5",
+      "what": "an inactive product is included",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (!p.active || p.qty === null || !p.category) continue;",
+              "to": "if (p.qty === null || !p.category) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R6",
+      "what": "a product with no tracked balance is low",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "if (!p.active || p.qty === null || !p.category) continue;",
+              "to": "if (!p.active || !p.category) continue;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R7",
+      "what": "under is computed the wrong way round",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "under: t - p.qty",
+              "to": "under: p.qty - t"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R8",
+      "what": "the sort drops the furthest-under rule",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "a.category.localeCompare(b.category) || b.under - a.under || a.name.localeCompare(b.name)",
+              "to": "a.category.localeCompare(b.category) || a.name.localeCompare(b.name)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R9",
+      "what": "the first-word heuristic comes back",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "const t = level.get(norm(p.category));",
+              "to": "const t = level.get(norm(p.category)) ?? level.get(norm(p.category.split(' ')[0]));"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W1",
+      "what": "the ISO week ignores the Thursday rule (year edge wrong)",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "d.setUTCDate(d.getUTCDate() - dow + 3);",
+              "to": "d.setUTCDate(d.getUTCDate() - dow);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W2",
+      "what": "the weekly key drops the week",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "export const weeklyKey = (week: string) => `low-stock:${week}`;",
+              "to": "export const weeklyKey = (_week: string) => `low-stock`;"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X2",
+      "what": "the text carries no count of the rest",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "const more = rows.length > TEXT_LIST_MAX ? `, and ${rows.length - TEXT_LIST_MAX} more` : \"\";",
+              "to": "const more = \"\";"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X3",
+      "what": "the text drops the level",
+      "files": [
+        {
+          "file": "src/lib/low-stock.ts",
+          "edits": [
+            {
+              "from": "(${r.quantity} ≤ ${r.threshold})",
+              "to": "(${r.quantity})"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "what": "the defaults are not used when nothing is saved",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "const effective = (saved: Thresholds | null): Thresholds => saved ?? { ...DEFAULT_LOW_STOCK_THRESHOLDS };",
+              "to": "const effective = (saved: Thresholds | null): Thresholds => saved ?? {};"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "what": "a bad map is saved anyway",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "if (issues.length) throw badRequest(",
+              "to": "if (false as boolean) throw badRequest("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "what": "an empty map is accepted",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "if (!Object.keys(value).length) throw badRequest(",
+              "to": "if (false as boolean) throw badRequest("
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "what": "the actor is not recorded",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "await store.replaceThresholds(value, by);",
+              "to": "await store.replaceThresholds(value, null);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "what": "the job posts even when nothing is low",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "if (!rows.length) return { week, low: 0, recipients: 0, posted: 0, alreadyPosted: 0 };",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "what": "the job's key has no week (a second week is swallowed)",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "key: weeklyKey(week) }",
+              "to": "key: \"low-stock\" }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "what": "the job posts once per product, not once per recipient with one text",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "const text = lowStockText(rows);",
+              "to": "const text = lowStockText(rows.slice(0, 1));"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "what": "the job uses the UTC day for the week",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "const today = bangkokDate(now());",
+              "to": "const today = now().toISOString().slice(0, 10);"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "what": "the notifier writes outside the job's transaction",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "createNotification(tx.exec, {",
+              "to": "createNotification(null, {"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "what": "the recipients are read outside the job's transaction",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "notifier.recipientsForType(\"Low Stock\", tx.exec)",
+              "to": "notifier.recipientsForType(\"Low Stock\", null)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "what": "the posted count is wrong",
+      "files": [
+        {
+          "file": "src/services/low-stock.service.ts",
+          "edits": [
+            {
+              "from": "alreadyPosted: people.length - posted",
+              "to": "alreadyPosted: 0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G1",
+      "what": "the thresholds write is CEO-only again",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".put(\"/low-stock/thresholds\", adminAuth,",
+              "to": ".put(\"/low-stock/thresholds\", requireRole(\"ceo\"),"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "what": "the thresholds read has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/low-stock/thresholds\", adminAuth,",
+              "to": ".get(\"/low-stock/thresholds\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "what": "the low list has no auth",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": ".get(\"/low-stock\", adminAuth,",
+              "to": ".get(\"/low-stock\","
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G4",
+      "what": "the job endpoint has no guard",
+      "files": [
+        {
+          "file": "src/routes/internal-jobs.ts",
+          "edits": [
+            {
+              "from": ".use(\"*\", strictServiceToken)",
+              "to": ".use(\"*\", async (_c, n) => n())"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G5",
+      "what": "the job router is not mounted",
+      "files": [
+        {
+          "file": "src/routes/api.ts",
+          "edits": [
+            {
+              "from": "  .route(\"/internal/jobs\", internalJobsRoutes)\n",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G6",
+      "what": "the write body accepts an array",
+      "files": [
+        {
+          "file": "src/routes/stock.ts",
+          "edits": [
+            {
+              "from": "z.record(z.string(), z.unknown())",
+              "to": "z.unknown()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "what": "the .ps1 registers itself",
+      "files": [
+        {
+          "file": "sm-jobs/low-stock-weekly.ps1",
+          "edits": [
+            {
+              "from": "$ErrorActionPreference = \"Stop\"",
+              "to": "$ErrorActionPreference = \"Stop\"; Register-ScheduledTask -TaskName x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "what": "the .ps1 runs without a token",
+      "files": [
+        {
+          "file": "sm-jobs/low-stock-weekly.ps1",
+          "edits": [
+            {
+              "from": "exit 2",
+              "to": "exit 0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "what": "the .ps1 hard-codes a secret",
+      "files": [
+        {
+          "file": "sm-jobs/low-stock-weekly.ps1",
+          "edits": [
+            {
+              "from": "$token = $env:BB_SERVICE_TOKEN",
+              "to": "$token = 'change-me-service-token'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "what": "the .ps1 posts to the wrong path",
+      "files": [
+        {
+          "file": "sm-jobs/low-stock-weekly.ps1",
+          "edits": [
+            {
+              "from": "/api/v1/internal/jobs/low-stock-weekly",
+              "to": "/api/v1/internal/jobs/low-stock"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

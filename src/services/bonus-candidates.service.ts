@@ -17,7 +17,8 @@ import {
   bonus100Candidates,
   bonus50Candidates,
   DEFAULT_RULES,
-  monthWindow,
+  windowBounds,
+  type BonusWindow,
   type Bonus100Candidate,
   type Bonus50Candidate,
   type BonusRules,
@@ -36,14 +37,15 @@ export interface BonusCandidates {
  * composition (month check · rules passthrough · the month filter) is testable without a database.
  */
 export async function listBonusCandidates(
-  month: string,
+  month: BonusWindow,
   rules: BonusRules = DEFAULT_RULES,
-  load: (month: string) => Promise<PurchaseRow[]> = loadPurchaseRows,
+  load: (month: BonusWindow) => Promise<PurchaseRow[]> = loadPurchaseRows,
 ): Promise<BonusCandidates> {
+  // 🔻 TASK-867 rework: `month` is a Bangkok month `YYYY-MM` (old callers) OR an inclusive date range `{ from, to }` (the pay period).
   try {
-    monthWindow(month);
+    windowBounds(month);
   } catch {
-    throw badRequest("month must be YYYY-MM");
+    throw badRequest(typeof month === "string" ? "month must be YYYY-MM" : "range must be { from, to } as YYYY-MM-DD, from <= to");
   }
   const rows = await load(month);
   return { bonus50: bonus50Candidates(rows, rules, month), bonus100: bonus100Candidates(rows, rules, month) };
@@ -114,14 +116,14 @@ const uniq = (xs: readonly (string | null | undefined)[]): string[] => [...new S
 // ───────────────────────────────── the one DB read ─────────────────────────────────
 
 /** Reads a month's sales and assembles plain rows for the pure rules. Read-only: SELECTs only. */
-export async function loadPurchaseRows(month: string): Promise<PurchaseRow[]> {
+export async function loadPurchaseRows(month: BonusWindow): Promise<PurchaseRow[]> {
   const { db } = await import("../db");
   return loadPurchaseRowsFrom(db, month);
 }
 
 /** `loadPurchaseRows` on a given db (so a read-only check can pass its own). */
-export async function loadPurchaseRowsFrom(d: any, month: string): Promise<PurchaseRow[]> {
-  const window = monthWindow(month);
+export async function loadPurchaseRowsFrom(d: any, month: BonusWindow): Promise<PurchaseRow[]> {
+  const window = windowBounds(month);
 
   const [courses, vouchers] = await Promise.all([coursesInMonthQuery(d, window), vouchersInMonthQuery(d, window)]);
   const sold: { kind: "COURSE" | "VOUCHER"; row: any }[] = [

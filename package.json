@@ -15,6 +15,8 @@
     "db:seed-bo-ceo": "bun run src/db/seed-bo-ceo.ts",
     "seed": "bun run src/db/seed-bo-ceo.ts",
     "db:seed-salary-demo": "bun run src/db/seed-salary-demo.ts",
+    "db:seed-demo-stock": "bun run src/db/seed-demo-stock.ts",
+    "db:seed-notification-assignments": "bun run src/db/seed-notification-assignments.ts",
     "migrate:bo": "bun run src/db/migrate-to-bo.ts",
     "verify:bo": "bun run src/db/verify-bo-migration.ts",
     "smoke": "bun run scripts/smoke.ts",
@@ -25,7 +27,9 @@
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "4.4.0",
     "hono": "^4.12.26",
+    "pdfkit": "0.20.2",
     "postgres": "^3.4.9",
     "zod": "^4.1.12"
   },

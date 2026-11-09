@@ -146,4 +146,64 @@ export const BO_WITNESSES: Witness[] = [
       "the index existing proves the table landed before it (TASK-874 / SPEC-099 §8). Nothing else creates it.",
     rerunnable: false, // plain CREATE TABLE: a re-run on a half-applied DB fails on 'already exists'
   },
+  {
+    tag: "0013_bo_school_transport_trip",
+    probe: { kind: "index", index: "bo_transport_trip_teacher_date_idx", schema: "bo" },
+    why:
+      "0013 creates bo.school and bo.transport_trip, the FK, the unique name index, and the trip's (teacher_id, date) index LAST — so " +
+      "that index existing proves both tables landed before it (TASK-868 / SPEC-100 §9b Transportation). Nothing else creates it.",
+    rerunnable: false, // plain CREATE TABLE: a re-run on a half-applied DB fails on 'already exists'
+  },
+  {
+    tag: "0014_bo_pay_slip_line_class_type",
+    probe: { kind: "column", table: "pay_slip_line", column: "class_type", schema: "bo" },
+    why:
+      "0014 adds the single column bo.pay_slip_line.class_type (TASK-903: fl_pay split per class type); there is nothing after it, so the column itself is the " +
+      "last object the migration creates. Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN IF NOT EXISTS
+  },
+  {
+    tag: "0015_bo_item_commission_group",
+    probe: { kind: "column", table: "item", column: "commission_group", schema: "bo" },
+    why:
+      "0015 adds the single column bo.item.commission_group (TASK-904: a stock product's commission group name); there is nothing after it, so the column itself is the " +
+      "last object the migration creates. Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN IF NOT EXISTS
+  },
+  {
+    tag: "0016_bo_sale",
+    probe: { kind: "index", index: "bo_sale_line_movement_uq", schema: "bo" },
+    why:
+      "0016 creates bo.sale and bo.sale_line (TASK-909: the Stock OUT sale record). The probe is the LAST object the file creates (the unique index on sale_line.movement_id), so a run that died after the first table " +
+      "is not called applied. Not rerunnable (plain CREATE TABLE): a half-applied run is fixed by hand.",
+    rerunnable: false,
+  },
+  {
+    tag: "0017_bo_movement_occurred_on",
+    probe: { kind: "column", table: "movement", column: "occurred_on", schema: "bo" },
+    why: "0017 adds the single column bo.movement.occurred_on (TASK-911: the movement business date); nothing follows it, so the column itself is the last object the migration creates. Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN IF NOT EXISTS
+  },
+  {
+    tag: "0018_bo_item_revenue_category",
+    probe: { kind: "column", table: "item", column: "revenue_category_id", schema: "bo" },
+    why: "0018 adds the single column bo.item.revenue_category_id (TASK-909 / 904 companion: the revenue category a stock sale posts into); nothing follows it, so the column itself is the last object the migration creates. Nothing else creates it.",
+    rerunnable: true, // ADD COLUMN IF NOT EXISTS
+  },
+  {
+    tag: "0019_bo_demo_stock",
+    probe: { kind: "index", index: "bo_demo_movement_key_uq", schema: "bo" },
+    why:
+      "0019 creates bo.demo_site, bo.demo_item, bo.demo_stock and bo.demo_movement (TASK-915: Stock Demo); the unique idempotency-key index on demo_movement is the LAST statement, so it existing proves all four tables " +
+      "landed before it. Nothing else creates it.",
+    rerunnable: true, // CREATE TABLE / INDEX IF NOT EXISTS
+  },
+  {
+    tag: "0020_bo_notification",
+    probe: { kind: "index", index: "low_stock_threshold_pkey", schema: "bo" },
+    why:
+      "0020 creates bo.notification, bo.notification_assignment and bo.low_stock_threshold (TASK-917), then seeds; the primary-key index of low_stock_threshold is created WITH the last table, so it existing proves all three " +
+      "tables landed before it. Nothing else creates it.",
+    rerunnable: true, // CREATE TABLE / INDEX IF NOT EXISTS, seeds ON CONFLICT DO NOTHING
+  },
 ];

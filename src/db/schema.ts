@@ -490,6 +490,9 @@ export const boItem = bo.table(
     ceilingQty: integer("ceiling_qty"), // optional cap (e.g. monthly freelance hours)
     remainingQty: integer("remaining_qty"), // current remaining under the ceiling
     unitPriceMinor: integer("unit_price_minor").notNull().default(0), // money per unit (satang)
+    // 🔻 TASK-909 / 904 companion (`0018`, DECISIONS row 21) — the revenue category a sale of this product posts into (bo.revenue_category.id). Nullable; NO drizzle FK here (schema-revenue.ts imports this file: a reference would be a cycle) — the FK is in the migration.
+    revenueCategoryId: uuid("revenue_category_id"),
+    commissionGroup: text("commission_group"), // 🔻 TASK-904 (`0015`) — a stock product's commission group NAME (nullable; the picker + R3.5 read it)
     ownerRef: text("owner_ref"), // e.g. scheduling teacherId — teacher identity ONLY, never a product code
     externalSource: text("external_source"), // e.g. 'smart-scheduler'
     // Product code for sale posting: "course-6" / "voucher-10" / "first-trial" / "single-session"
@@ -526,11 +529,56 @@ export const boMovement = bo.table(
     // movement is untouched, and nothing reads them until TASK-160 starts writing them.
     actor: text("actor"),
     note: text("note"),
+    /** 🔻 TASK-911 (`0017`) - the BUSINESS day (Asia/Bangkok): Stock IN = receivedOn, Stock OUT = the sale's day, import = the apply day. NULL on legacy rows (the report falls back to created_at). */
+    occurredOn: date("occurred_on"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     uniqueIndex("bo_movement_idempotency_uq").on(t.idempotencyKey),
     index("bo_movement_item_idx").on(t.itemId, t.createdAt),
+  ],
+);
+
+// 🔻 TASK-909 (`0016`, REQ-120 R3.5) — the Stock OUT sale record. A header (who sold, when, where, how it was paid) and its lines (what left stock, at what price,
+// with what discount and commission AS GIVEN), each line linked to the SALE movement it wrote. `branch` / `method` / `buyer_ref` / `remark` are forward-looking: the
+// Revenue posting and the commission layer read them, so neither re-migrates. Money is integer satang; nothing here is a total.
+export const boSale = bo.table(
+  "sale",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    soldAt: timestamp("sold_at", { withTimezone: true }).notNull(),
+    branch: text("branch").notNull().default("BRAVO"),
+    method: text("method"), // 'TRANSFER' | 'CASH' | 'CARD' | NULL (not said yet)
+    buyerRef: text("buyer_ref"),
+    remark: text("remark"),
+    sellerRefs: jsonb("seller_refs").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    actor: text("actor"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("bo_sale_idempotency_uq").on(t.idempotencyKey),
+    check("bo_sale_branch_ck", sql`${t.branch} IN ('BRAVO','OTHER')`),
+    check("bo_sale_method_ck", sql`${t.method} IS NULL OR ${t.method} IN ('TRANSFER','CASH','CARD')`),
+  ],
+);
+
+export const boSaleLine = bo.table(
+  "sale_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    saleId: uuid("sale_id").notNull().references(() => boSale.id, { onDelete: "restrict" }),
+    itemId: uuid("item_id").notNull().references(() => boItem.id, { onDelete: "restrict" }),
+    qty: integer("qty").notNull(),
+    unitPriceMinor: integer("unit_price_minor").notNull(),
+    discountMinor: integer("discount_minor").notNull().default(0),
+    commissionMinor: integer("commission_minor").notNull().default(0),
+    movementId: uuid("movement_id").notNull().references(() => boMovement.id, { onDelete: "restrict" }),
+  },
+  (t) => [
+    uniqueIndex("bo_sale_line_movement_uq").on(t.movementId),
+    check("bo_sale_line_qty_ck", sql`${t.qty} > 0`),
+    check("bo_sale_line_money_ck", sql`${t.unitPriceMinor} >= 0 AND ${t.discountMinor} >= 0 AND ${t.commissionMinor} >= 0 AND ${t.discountMinor} <= ${t.qty} * ${t.unitPriceMinor}`),
   ],
 );
 
@@ -751,6 +799,8 @@ export const boPaySlipLine = bo.table(
      * Nullable: a manual line has none. The partial unique index below makes (slip, kind, source_ref) unique among `source = 'auto'` lines.
      */
     sourceRef: text("source_ref"),
+    /** 🔻 TASK-903 (SPEC-101 §6, `0014`) - the class type of a `fl_pay` line (one line per FL date x class). NULL for every other kind. */
+    classType: boPayClassType("class_type"),
     /** The CEO username from the token. */
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -808,4 +858,78 @@ export const pubBookings = pgTable("bookings", {
   subjectId: uuid("subject_id").notNull(),
   courseId: uuid("course_id"),
   date: date("date").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔻 TASK-924 / SPEC-103 — READ-ONLY declarations for the All Report API (both halves: STUDENT here, COURSE + REPORT in TASK-926).
+//
+// ⚠️ Same ownership rule as above: backoffice-back READS these, never writes or migrates `public`. Named `rp*` and
+// declared apart from the `pub*` block on purpose: those serve the revenue join and other seats' tests pin them.
+// Only the columns SPEC-103 §2–§4 read. Enum columns (status, booking_type, source, branch) are read as plain text.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const rpParents = pgTable("parents", {
+  id: uuid("id").primaryKey(),
+  phone: text("phone").notNull(),
+  name: text("name"),
+  province: text("province"),
+});
+
+export const rpStudents = pgTable("students", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  nickname: text("nickname"),
+  parentId: uuid("parent_id"),
+  gender: text("gender"),
+  birthDate: date("birth_date"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const rpSubjects = pgTable("subjects", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+});
+
+export const rpCourses = pgTable("course_packages", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id"),
+  coStudentId: uuid("co_student_id"),
+  size: smallint("size").notNull(),
+  subjectId: uuid("subject_id"),
+  usedSessions: smallint("used_sessions").notNull(),
+  priorSessions: smallint("prior_sessions").notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  droppedAt: timestamp("dropped_at", { withTimezone: true }),
+  expiryDate: date("expiry_date").notNull(),
+  source: text("source").notNull(),
+  fromTrialBookingId: uuid("from_trial_booking_id"),
+  branch: text("branch"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+// A voucher has NO subject_id and NO dropped_at (SB schema.ts ~429): never "paused"; its activity comes from its bookings.
+export const rpVouchers = pgTable("vouchers", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id").notNull(),
+  totalHours: smallint("total_hours").notNull(),
+  usedHours: smallint("used_hours").notNull(),
+  expiryDate: date("expiry_date").notNull(),
+  source: text("source").notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  fromTrialBookingId: uuid("from_trial_booking_id"),
+  branch: text("branch"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const rpBookings = pgTable("bookings", {
+  id: uuid("id").primaryKey(),
+  studentId: uuid("student_id").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  date: date("date").notNull(),
+  bookingType: text("booking_type").notNull(),
+  status: text("status").notNull(),
+  courseId: uuid("course_id"),
+  voucherId: uuid("voucher_id"),
+  branch: text("branch"),
 });

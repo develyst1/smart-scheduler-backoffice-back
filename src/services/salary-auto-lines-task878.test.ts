@@ -79,7 +79,7 @@ describe("the pure money rules", () => {
   test("FL pay: only on FL days; a class type with minutes and no rate is reported, not paid at 0", () => {
     const mix = { employmentType: "PT" as const, roles: ["PT", "FL"] as ("PT" | "FL")[] };
     const r = flPayLines(mix, { private: 40_000 }, [day("2026-10-14", { private: 60, camp: 30 }), day("2026-10-17", { private: 600 })]);
-    expect(r.lines.map((l) => [l.sourceRef, l.amountSatang])).toEqual([["fl:2026-10-14", 40_000]]);
+    expect(r.lines.map((l) => [l.sourceRef, l.classType, l.amountSatang])).toEqual([["fl:2026-10-14:private", "private", 40_000]]);
     expect(r.missingRates).toEqual([{ date: "2026-10-14", classType: "camp" }]);
   });
 });
@@ -90,7 +90,7 @@ describe("the hand example: an FT and a PT+FL coach over 30/9 – 30/10/2026", (
     expect(period.periodStart).toBe("2026-09-30");
     expect(period.periodEnd).toBe("2026-10-30");
     const out = await svc.runPeriod(period.id);
-    expect(out).toMatchObject({ created: 2, refreshed: 0, autoLines: { inserted: 5, updated: 0, removed: 0 } });
+    expect(out).toMatchObject({ created: 2, refreshed: 0, autoLines: { inserted: 6, updated: 0, removed: 0 } });
     expect(out.warnings).toEqual([{ teacherId: MIX, date: "2026-10-16", classType: "camp", problem: "no_fl_rate" }]);
 
     // Ton (FT): 14/10 6 Hr → 2 Hr × 350 = 700.00 · 18/10 6.5 Hr → 1.5 Hr × 350 = 525.00 · nothing on the 15th (4 Hr) or the 17th (5 Hr on a weekend)
@@ -98,12 +98,13 @@ describe("the hand example: an FT and a PT+FL coach over 30/9 – 30/10/2026", (
       ["extra_hour", "eh:2026-10-14", 70_000, "auto"],
       ["extra_hour", "eh:2026-10-18", 52_500, "auto"],
     ]);
-    // Ploy (PT+FL): 14/10 FL 2 Hr × 400 + 1 Hr × 250 = 1,050.00 · 15/10 FL 5 Hr × 400 = 2,000.00 (no extra: FL) · 16/10 camp: no rate → no line
+    // Ploy (PT+FL): 14/10 FL private 2 Hr × 400 = 800.00 + group 1 Hr × 250 = 250.00 (TASK-903: one line per class; together the old 1,050.00) · 15/10 FL 5 Hr × 400 = 2,000.00 (no extra: FL) · 16/10 camp: no rate → no line
     // · 17/10 PT: 6 Hr on a Saturday → 1 Hr × 350 = 350.00 (a PT day: Extra Hour applies; FL pay does not)
     expect(linesOf(store, MIX).map((l) => [l.kind, l.sourceRef, l.amountSatang]).sort()).toEqual([
       ["extra_hour", "eh:2026-10-17", 35_000],
-      ["fl_pay", "fl:2026-10-14", 105_000],
-      ["fl_pay", "fl:2026-10-15", 200_000],
+      ["fl_pay", "fl:2026-10-14:group", 25_000],
+      ["fl_pay", "fl:2026-10-14:private", 80_000],
+      ["fl_pay", "fl:2026-10-15:private", 200_000],
     ]);
     const ov = await svc.getPeriod(period.id);
     expect(ov.slips.find((s) => s.teacherId === FT)).toMatchObject({ baseAmount: 2_500_000, total: 2_500_000 + 122_500 });
@@ -114,9 +115,12 @@ describe("the hand example: an FT and a PT+FL coach over 30/9 – 30/10/2026", (
     const { store, svc, period } = await setup();
     await svc.runPeriod(period.id);
     const slip = await svc.getSlip(slipOf(store, MIX).id);
-    const fl = slip.lines.find((l) => l.kind === "fl_pay" && l.label.startsWith("14/10"))!;
+    const fl = slip.lines.find((l) => l.kind === "fl_pay" && l.classType === "private" && l.label.startsWith("14/10"))!;
     expect(fl.kindLabel).toBe("Freelance Hour");
-    expect(fl.label).toBe("14/10 (Wed): private 2 Hr × 400, group 1 Hr × 250");
+    expect(fl.label).toBe("14/10 (Wed): private 2 Hr × 400");
+    const grp = slip.lines.find((l) => l.kind === "fl_pay" && l.classType === "group")!;
+    expect(grp).toMatchObject({ label: "14/10 (Wed): group 1 Hr × 250", amount: 25_000 });
+    expect(slip.lines.filter((l) => l.kind !== "fl_pay").every((l) => l.classType === null)).toBe(true); // only fl_pay carries a class type
     const eh = (await svc.getSlip(slipOf(store, FT).id)).lines.find((l) => l.label.startsWith("14/10"))!;
     expect(eh.kindLabel).toBe("Extra Hour");
     expect(eh.label).toBe("14/10 (Wed): 6 Hr → extra 2 Hr × 350");
@@ -231,5 +235,57 @@ describe("OT (admin-entered) and Merit (typed)", () => {
     await rejects(svc.addMerit(ton, { amount: 1.5 }, "ceo"), 400);
     await svc.lockPeriod(period.id);
     await rejects(svc.addMerit(ton, { amount: 100 }, "ceo"), 409);
+  });
+});
+
+describe("TASK-883 - the overview carries missingRates (read-only, always true)", () => {
+  test("a coach-day with minutes but no FL rate shows up with NO Run; setting the rate removes it", async () => {
+    const { store, svc, period } = await setup();
+    const before = await svc.getPeriod(period.id);
+    expect(before.missingRates).toEqual([{ teacherId: MIX, date: "2026-10-16", classType: "camp", problem: "no_fl_rate" }]);
+    expect(store.slips.size).toBe(0); // a pure read: no slip, no line written
+    expect(store.lines.size).toBe(0);
+    await svc.setFlRate(MIX, "camp", 20_000);
+    expect((await svc.getPeriod(period.id)).missingRates).toEqual([]);
+  });
+  test("agrees with what runPeriod warns about; empty when every rate exists; inactive people are not checked", async () => {
+    const { svc, period, state } = await setup();
+    const ran = await svc.runPeriod(period.id);
+    expect((await svc.getPeriod(period.id)).missingRates).toEqual(ran.warnings!.map((w) => ({ teacherId: w.teacherId, date: w.date, classType: w.classType, problem: "no_fl_rate" })));
+    state.hours[MIX] = [];
+    expect((await svc.getPeriod(period.id)).missingRates).toEqual([]); // the timetable changed: no Run needed
+    state.hours[MIX] = PLOY;
+    await svc.setProfile(MIX, { employmentType: "PT", baseSalary: 1_000_000, active: false, roles: ["PT", "FL"] });
+    expect((await svc.getPeriod(period.id)).missingRates).toEqual([]);
+  });
+});
+
+describe("TASK-903 - fl_pay is one line per (date x class type)", () => {
+  test("a two-class day is two lines, each with its own classType, sourceRef and amount; the sum is the old single line", async () => {
+    const { store, svc, period } = await setup();
+    await svc.runPeriod(period.id);
+    const fl = linesOf(store, MIX).filter((l) => l.kind === "fl_pay" && l.sourceRef!.startsWith("fl:2026-10-14"));
+    expect(fl.map((l) => [l.classType, l.sourceRef, l.amountSatang]).sort()).toEqual([["group", "fl:2026-10-14:group", 25_000], ["private", "fl:2026-10-14:private", 80_000]]);
+    expect(fl.reduce((s, l) => s + l.amountSatang, 0)).toBe(105_000); // = the old one-line 1,050.00
+    expect(linesOf(store, MIX).filter((l) => l.kind === "extra_hour").every((l) => l.classType == null)).toBe(true);
+  });
+  test("a double runPeriod does not duplicate any fl_pay line, and the overview/slip DTO carries classType", async () => {
+    const { store, svc, period } = await setup();
+    await svc.runPeriod(period.id);
+    const before = linesOf(store, MIX).length;
+    const again = await svc.runPeriod(period.id);
+    expect(again.autoLines).toBeUndefined();
+    expect(linesOf(store, MIX).length).toBe(before);
+    const dto = (await svc.getSlip(slipOf(store, MIX).id)).lines.filter((l) => l.kind === "fl_pay");
+    expect(dto.map((l) => l.classType).sort()).toEqual(["group", "private", "private"]);
+  });
+  test("a class that disappears from the timetable drops only its own line; a new class adds one", async () => {
+    const { store, svc, period, state } = await setup();
+    await svc.runPeriod(period.id);
+    state.hours[MIX] = [day("2026-10-14", { private: 120, duo: 60 }), day("2026-10-15", { private: 300 }), day("2026-10-17", { group: 360 })]; // group gone from the 14th, duo (no rate yet) appears
+    await svc.setFlRate(MIX, "duo", 30_000);
+    const out = await svc.runPeriod(period.id);
+    expect(out.autoLines).toEqual({ inserted: 1, updated: 0, removed: 1 });
+    expect(linesOf(store, MIX).filter((l) => l.kind === "fl_pay").map((l) => l.sourceRef).sort()).toEqual(["fl:2026-10-14:duo", "fl:2026-10-14:private", "fl:2026-10-15:private"]);
   });
 });
