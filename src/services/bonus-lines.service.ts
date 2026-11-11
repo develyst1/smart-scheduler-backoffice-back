@@ -277,12 +277,12 @@ export interface BonusLinesDeps {
  */
 export async function applyBonusLines(periodId: string, rules: BonusRules, actor: string, deps: BonusLinesDeps): Promise<ApplyBonusResult> {
   const overview = await deps.salary.getPeriod(periodId); // lazy lock applied here; 404 if unknown
-  if (overview.period.status === "locked") throw conflict("LOCKED", "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้");
+  if (overview.period.status === "locked") throw conflict("LOCKED", "This period is locked and cannot be edited");
 
   // 🔻 Rework (DECISIONS row 18): the purchases of the R1.4 PAY PERIOD (`periodStart..periodEnd`, inclusive, Bangkok dates),
   // not the calendar month: a 30/9 purchase lands on October's slip, a 31/10 purchase on November's.
   const { periodStart, periodEnd } = overview.period;
-  if (!periodStart || !periodEnd) throw badRequest("งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+  if (!periodStart || !periodEnd) throw badRequest("This period has no date range (period_start / period_end)");
   const candidates = await deps.candidates({ from: periodStart, to: periodEnd }, rules);
   const profiles = new Map((await deps.profiles.listProfiles()).map((p) => [p.teacherId, p]));
   const slipByTeacher = new Map(overview.slips.map((s) => [s.teacherId, { id: s.id, status: s.status }]));

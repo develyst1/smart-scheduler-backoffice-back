@@ -18,7 +18,7 @@ export interface FoUser {
 /** What sign-in needs from the front office. */
 export type FoCredential = { passwordHash: string; disabledAt: Date | string | null };
 
-export type AdmittedUserDTO = { id: string; username: string; role: "admin" | "coach" | "ceo"; teacherId: string | null; active: boolean; admitted: boolean; createdAt: string };
+export type AdmittedUserDTO = { id: string; username: string; role: "admin" | "coach" | "ceo"; teacherId: string | null; active: boolean; admitted: boolean; createdAt: string; teacherName: string | null };
 
 export interface UsersStore {
   foByUsername(username: string): Promise<FoUser | undefined>;
@@ -43,7 +43,8 @@ export async function foCredential(foUserId: string, exec: Exec = db as unknown 
   return r ? { passwordHash: String(r.password_hash), disabledAt: (r.disabled_at as Date | string | null) ?? null } : undefined;
 }
 
-const dto = (r: typeof boUsers.$inferSelect): AdmittedUserDTO => ({ id: r.id, username: r.username, role: r.role, teacherId: r.teacherId ?? null, active: r.active, admitted: r.foUserId !== null, createdAt: new Date(r.createdAt).toISOString() });
+/** teacherName is filled only by `list()` (the join); the write responses carry null and the FE refetches. */
+const dto = (r: typeof boUsers.$inferSelect): AdmittedUserDTO => ({ id: r.id, username: r.username, role: r.role, teacherId: r.teacherId ?? null, active: r.active, admitted: r.foUserId !== null, createdAt: new Date(r.createdAt).toISOString(), teacherName: null });
 
 /** The real store; `d` is `db`, or a transaction (the rolled-back sid check). */
 export const makeDbStore = (d: typeof db = db): UsersStore => ({
@@ -60,7 +61,14 @@ export const makeDbStore = (d: typeof db = db): UsersStore => ({
     return dto(r!);
   },
   async list() {
-    return (await d.select().from(boUsers).orderBy(boUsers.username)).map(dto);
+    // TASK-932: ONE read-only left join on public.teachers (id-match + nickname + name ONLY: no pay, phone, LINE or parent ids). nickname-else-name; null for admin / CEO / a teacher not found.
+    const rows = rowsOf(await (d as unknown as Exec).execute(sql`
+      select u.id, u.username, u.role, u.teacher_id, u.active, u.fo_user_id, u.created_at, coalesce(nullif(t.nickname, ''), t.name) as teacher_name
+        from bo.users u left join public.teachers t on t.id = u.teacher_id order by u.username`));
+    return rows.map((r) => ({
+      id: String(r.id), username: String(r.username), role: r.role as AdmittedUserDTO["role"], teacherId: r.teacher_id ? String(r.teacher_id) : null, active: r.active === true,
+      admitted: r.fo_user_id != null, createdAt: new Date(r.created_at as string | Date).toISOString(), teacherName: r.teacher_id && r.teacher_name ? String(r.teacher_name) : null,
+    }));
   },
   async get(id) {
     const [r] = await d.select({ id: boUsers.id, role: boUsers.role, active: boUsers.active }).from(boUsers).where(eq(boUsers.id, id)).limit(1);
@@ -81,26 +89,26 @@ export interface AdmitInput {
 
 export async function admit(input: AdmitInput, store: UsersStore = dbStore): Promise<AdmittedUserDTO> {
   const username = typeof input.username === "string" ? normalize(input.username) : "";
-  if (!USERNAME_RE.test(username)) throw badRequest("ชื่อผู้ใช้ไม่ถูกต้อง", { field: "username" });
-  if (input.role === "ceo") throw badRequest("ไม่สามารถเพิ่มผู้ใช้เป็น CEO ได้", { field: "role" });
-  if (input.role !== "admin" && input.role !== "coach") throw badRequest("role ต้องเป็น admin หรือ coach", { field: "role" });
-  if (input.teacherId != null && (typeof input.teacherId !== "string" || !UUID.test(input.teacherId))) throw badRequest("teacherId ไม่ถูกต้อง", { field: "teacherId" });
+  if (!USERNAME_RE.test(username)) throw badRequest("Invalid username", { field: "username" });
+  if (input.role === "ceo") throw badRequest("A user can't be added as CEO", { field: "role" });
+  if (input.role !== "admin" && input.role !== "coach") throw badRequest("Role must be admin or coach", { field: "role" });
+  if (input.teacherId != null && (typeof input.teacherId !== "string" || !UUID.test(input.teacherId))) throw badRequest("Invalid teacher", { field: "teacherId" });
   const fo = await store.foByUsername(username);
-  if (!fo) throw notFound("ไม่พบผู้ใช้นี้ในระบบหน้าบ้าน");
-  if (fo.disabledAt) throw badRequest("ผู้ใช้นี้ถูกปิดใช้งานในระบบหน้าบ้าน", { field: "username" });
-  if (await store.boByUsernameOrFoId(username, fo.id)) throw conflict("ALREADY_ADMITTED", "ผู้ใช้นี้ถูกเพิ่มในหลังบ้านแล้ว");
+  if (!fo) throw notFound("This person is not in the front office");
+  if (fo.disabledAt) throw badRequest("This person is disabled in the front office", { field: "username" });
+  if (await store.boByUsernameOrFoId(username, fo.id)) throw conflict("ALREADY_ADMITTED", "This person already has a back-office login");
   const teacherId = input.role === "coach" ? ((input.teacherId as string | null | undefined) ?? fo.teacherId) : null;
-  if (input.role === "coach" && !teacherId) throw badRequest("โค้ชต้องระบุ teacherId", { field: "teacherId" });
+  if (input.role === "coach" && !teacherId) throw badRequest("A coach must have a teacher selected", { field: "teacherId" });
   return store.insert({ username, passwordHash: fo.passwordHash, role: input.role, teacherId, foUserId: fo.id });
 }
 
 export const listUsers = (store: UsersStore = dbStore) => store.list();
 
 async function setActive(id: string, active: boolean, store: UsersStore): Promise<AdmittedUserDTO> {
-  if (!UUID.test(id)) throw badRequest("id ไม่ถูกต้อง");
+  if (!UUID.test(id)) throw badRequest("Invalid id");
   const row = await store.get(id);
-  if (!row) throw notFound("ไม่พบผู้ใช้");
-  if (row.role === "ceo") throw badRequest("ไม่สามารถปิดใช้งานบัญชี CEO ได้"); // the bootstrap CEO is never locked out from here
+  if (!row) throw notFound("User not found");
+  if (row.role === "ceo") throw badRequest("The CEO account can't be deactivated"); // the bootstrap CEO is never locked out from here
   return store.setActive(id, active);
 }
 export const deactivate = (id: string, store: UsersStore = dbStore) => setActive(id, false, store);

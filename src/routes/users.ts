@@ -15,7 +15,7 @@ export function makeUserRoutes(store?: UsersStore) {
     .get("/", requireRole("ceo"), async (c) => c.json(await listUsers(store)))
     .post("/", requireRole("ceo"), async (c) => {
       const body = await c.req.json().catch(() => null);
-      if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("ข้อมูลไม่ถูกต้อง");
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("Invalid request body");
       return c.json(await admit(body as Record<string, unknown>, store), 201);
     })
     .post("/:id/deactivate", requireRole("ceo"), async (c) => c.json(await deactivate(c.req.param("id") ?? "", store)))

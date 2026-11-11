@@ -50,7 +50,7 @@ export interface CommissionResult {
   notifyFailed?: number;
 }
 
-const locked = () => conflict("LOCKED", "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้");
+const locked = () => conflict("LOCKED", "This period is locked and cannot be edited");
 
 export interface CommissionDeps {
   salary: Pick<SalaryService, "getPeriod">;
@@ -66,7 +66,7 @@ export async function applyCommissionLines(periodId: string, actor: string, deps
   const overview = await deps.salary.getPeriod(periodId); // 404 if unknown; applies the lazy 12:00 lock first
   if (overview.period.status === "locked") throw locked();
   const { periodStart, periodEnd, year, month } = overview.period;
-  if (!periodStart || !periodEnd) throw conflict("NO_RANGE", "งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+  if (!periodStart || !periodEnd) throw conflict("NO_RANGE", "This period has no date range (period_start / period_end)");
 
   const rows = await deps.sales.listSaleLines({ from: periodStart, to: periodEnd });
   const slipOf = new Map(overview.slips.map((s) => [s.teacherId, { id: s.id, status: s.status }]));

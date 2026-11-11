@@ -79,7 +79,7 @@ export interface SalaryStore {
 /** One CSV cell: quoted (with doubled quotes) only when it holds a comma, quote or line break. */
 const csvCell = (s: string): string => (/[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
-const LOCKED_MSG = "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้";
+const LOCKED_MSG = "This period is locked and cannot be edited";
 const locked = () => conflict("LOCKED", LOCKED_MSG);
 
 /** 12:00 Asia/Bangkok (UTC+7, no DST) on the LAST day of (year, month) = 05:00 UTC (REQ-120 R1.5). month is 1–12. */
@@ -101,12 +101,12 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
   }
   async function periodOrThrow(id: string): Promise<Period> {
     const p = await store.getPeriod(id);
-    if (!p) throw notFound("ไม่พบงวดเงินเดือน");
+    if (!p) throw notFound("Pay period not found");
     return fresh(p);
   }
   async function slipOrThrow(id: string): Promise<{ slip: Slip; period: Period }> {
     const slip = await store.getSlip(id);
-    if (!slip) throw notFound("ไม่พบสลิป");
+    if (!slip) throw notFound("Slip not found");
     const period = await periodOrThrow(slip.periodId);
     // a lazy lock may just have locked the slips: read it back
     const again = (await store.getSlip(id)) ?? slip;
@@ -134,7 +134,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
     async createPeriod(year: number, month: number) {
       if (!Number.isInteger(year) || year < 2000 || year > 2100) throw badRequest("year must be 2000–2100");
       if (!Number.isInteger(month) || month < 1 || month > 12) throw badRequest("month must be 1–12");
-      if (await store.getPeriodByYearMonth(year, month)) throw conflict("PERIOD_EXISTS", "มีงวดเดือนนี้แล้ว");
+      if (await store.getPeriodByYearMonth(year, month)) throw conflict("PERIOD_EXISTS", "This month's pay period already exists");
       const range = payPeriodRange(year, month); // R1.4: last day of the previous month → the day before the last day of this one
       return periodDTO(await fresh(await store.insertPeriod({ year, month, lockAt: defaultLockAt(year, month), periodStart: range.start, periodEnd: range.end })));
     },
@@ -146,7 +146,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
     async runPeriod(id: string) {
       const period = await periodOrThrow(id);
       if (period.status === "locked") throw locked();
-      if (!period.periodStart || !period.periodEnd) throw badRequest("งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+      if (!period.periodStart || !period.periodEnd) throw badRequest("This period has no date range (period_start / period_end)");
       let created = 0;
       let refreshed = 0;
       let auto = { inserted: 0, updated: 0, removed: 0 };
@@ -184,7 +184,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       if (period.status === "locked" || slip.status === "locked") throw locked();
       if (!period.periodStart || !period.periodEnd || input.date < period.periodStart || input.date > period.periodEnd) throw badRequest("date is outside the pay period");
       const profile = await store.getProfile(slip.teacherId);
-      if (!profile) throw notFound("ไม่พบโปรไฟล์");
+      if (!profile) throw notFound("Profile not found");
       const role = roleOfDay(profile, input.date);
       if (role !== "FT" && role !== "PT") throw badRequest("OT is for FT / PT days only");
       if (slip.baseSatang <= 0) throw badRequest("the slip has no base salary to compute OT from");
@@ -240,13 +240,13 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       const label = (input.label ?? "").trim();
       const reason = (input.reason ?? "").trim();
       if (label.length > 200 || reason.length > 500) throw badRequest("label / reason too long");
-      if (input.kind === "other" && !reason) throw badRequest("ต้องระบุเหตุผล");
+      if (input.kind === "other" && !reason) throw badRequest("A reason is required");
       const found = await store.getPeriodByYearMonth(input.year, input.month);
-      if (!found) throw notFound("ไม่พบงวดเงินเดือน");
+      if (!found) throw notFound("Pay period not found");
       const period = await fresh(found);
       if (period.status === "locked") throw locked();
       const profile = await store.getProfile(input.teacherId);
-      if (!profile) throw notFound("ไม่พบโปรไฟล์");
+      if (!profile) throw notFound("Profile not found");
       if (input.kind === "merit" && !profile.meritEligible) throw new ApiException(422, "NOT_MERIT_ELIGIBLE", "this person is not merit-eligible");
       let slip = (await store.listSlips(period.id)).find((s) => s.teacherId === input.teacherId);
       if (!slip) {
@@ -309,7 +309,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
     /** An "Other ±" line: signed integer satang, a non-empty reason. Refused (409 LOCKED) once the period / slip is locked. */
     async addLine(slipId: string, input: { amount: number; label: string }, actor: string) {
       const label = (input.label ?? "").trim();
-      if (!label) throw badRequest("ต้องระบุเหตุผล");
+      if (!label) throw badRequest("A reason is required");
       if (!Number.isSafeInteger(input.amount) || input.amount === 0) throw badRequest("amount must be a non-zero integer (satang, may be negative)");
       const { slip, period } = await slipOrThrow(slipId);
       if (period.status === "locked" || slip.status === "locked") throw locked();
@@ -324,7 +324,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       const { slip, period } = await slipOrThrow(slipId);
       if (period.status === "locked" || slip.status === "locked") throw locked();
       const line = await store.getLine(lineId);
-      if (!line || line.slipId !== slip.id) throw notFound("ไม่พบรายการ");
+      if (!line || line.slipId !== slip.id) throw notFound("Line not found");
       await store.deleteLine(line.id);
     },
 
@@ -373,7 +373,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
 
     /** R1.2 — a person's FL hourly rates, one per class type that has one (integer satang per hour). 404 for an unknown person. */
     async getFlRates(teacherId: string) {
-      if (!(await store.getProfile(teacherId))) throw notFound("ไม่พบโปรไฟล์");
+      if (!(await store.getProfile(teacherId))) throw notFound("Profile not found");
       const have = new Map((await store.listFlRates(teacherId)).map((r) => [r.classType, r.rateSatang]));
       return CLASS_TYPES.filter((c) => have.has(c)).map((c) => ({ classType: c, rate: have.get(c)! }));
     },
@@ -383,7 +383,7 @@ export function createSalaryService(store: SalaryStore, now: () => Date = () => 
       if (!(CLASS_TYPES as readonly string[]).includes(classType)) throw badRequest(`classType must be one of ${CLASS_TYPES.join(", ")}`);
       if (!Number.isSafeInteger(rate) || rate < 0) throw badRequest("rate must be an integer ≥ 0 (satang per hour)");
       const r = await store.upsertFlRate(teacherId, classType as ClassType, rate);
-      if (!r) throw notFound("ไม่พบโปรไฟล์");
+      if (!r) throw notFound("Profile not found");
       return { classType: r.classType, rate: r.rateSatang };
     },
   };

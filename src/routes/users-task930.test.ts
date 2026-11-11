@@ -6,7 +6,8 @@ import { makeAuthRoutes } from "./auth";
 import { signToken } from "../lib/jwt";
 import { ApiException } from "../lib/http";
 import { hashPassword, type BoUserRow } from "../services/bo-user.service";
-import type { AdmittedUserDTO, FoUser, UsersStore } from "../services/bo-user-admin.service";
+import { makeDbStore, type AdmittedUserDTO, type FoUser, type UsersStore } from "../services/bo-user-admin.service";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const T1 = "11111111-1111-4111-8111-111111111111";
 const T2 = "22222222-2222-4222-8222-222222222222";
@@ -40,7 +41,7 @@ const reset = async () => {
   bo = [{ id: "b0000000-0000-4000-8000-000000000009", username: "phi", passwordHash: await hashPassword("ceo-own-password"), role: "ceo", teacherId: null, active: true, foUserId: null, createdAt: new Date(), updatedAt: new Date() }];
 };
 
-const dto = (r: BoUserRow): AdmittedUserDTO => ({ id: r.id, username: r.username, role: r.role, teacherId: r.teacherId, active: r.active, admitted: r.foUserId !== null, createdAt: r.createdAt.toISOString() });
+const dto = (r: BoUserRow): AdmittedUserDTO => ({ id: r.id, username: r.username, role: r.role, teacherId: r.teacherId, active: r.active, admitted: r.foUserId !== null, createdAt: r.createdAt.toISOString(), teacherName: null });
 const store: UsersStore = {
   foByUsername: async (u) => fo[u],
   boByUsernameOrFoId: async (u, id) => bo.find((r) => r.username === u || r.foUserId === id),
@@ -214,5 +215,35 @@ describe("sign-in: the SAME login as the front office", () => {
   test("there is no password route", async () => {
     await reset();
     for (const p of ["/users/b0000000-0000-4000-8000-000000000009/reset-password", "/users/b0000000-0000-4000-8000-000000000009/password"]) expect((await call("POST", p, "ceo", { password: "x" })).status).toBe(404);
+  });
+});
+
+describe("TASK-932 list(): teacherName from public.teachers (read-only left join)", () => {
+  const dialect = new PgDialect();
+  const run = async (canned: Record<string, unknown>[]) => {
+    const calls: string[] = [];
+    const d = { execute: async (q: Parameters<typeof dialect.sqlToQuery>[0]) => (calls.push(dialect.sqlToQuery(q).sql.replace(/\s+/g, " ")), canned) };
+    return { calls, rows: await makeDbStore(d as never).list() };
+  };
+  const row = (o: Record<string, unknown>) => ({ id: crypto.randomUUID(), username: "x", role: "admin", teacher_id: null, active: true, fo_user_id: null, created_at: new Date("2026-11-09T00:00:00Z"), teacher_name: null, ...o });
+  test("nickname -> the joined name (SQL does nickname-else-name); name-only -> name; admin / CEO -> null; teacher not found -> null; bare array, one query", async () => {
+    const { calls, rows } = await run([
+      row({ username: "coach-nick", role: "coach", teacher_id: T1, teacher_name: "Ton" }),
+      row({ username: "coach-name", role: "coach", teacher_id: T2, teacher_name: "Somchai Jaidee" }),
+      row({ username: "coach-gone", role: "coach", teacher_id: "33333333-3333-4333-8333-333333333333", teacher_name: null }),
+      row({ username: "an-admin", role: "admin", fo_user_id: "f0000000-0000-4000-8000-000000000001" }),
+      row({ username: "the-ceo", role: "ceo" }),
+    ]);
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.map((r) => r.teacherName)).toEqual(["Ton", "Somchai Jaidee", null, null, null]);
+    expect(rows[3]).toMatchObject({ admitted: true, teacherId: null });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("left join public.teachers t on t.id = u.teacher_id");
+    expect(calls[0]).toContain("coalesce(nullif(t.nickname, ''), t.name)");
+  });
+  test("🔒 only id / nickname / name of public.teachers are selected: no pay, phone, LINE or parent column; ceo-only route unchanged", async () => {
+    const { calls } = await run([]);
+    expect(calls[0]).not.toMatch(/\bt\.(?!id\b|nickname\b|name\b)\w+/);
+    expect(calls[0]).not.toMatch(/select \*|t\.\*/);
   });
 });

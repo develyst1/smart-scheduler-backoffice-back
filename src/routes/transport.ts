@@ -65,12 +65,12 @@ export function makeTransportRoutes(service: TransportService) {
   return new Hono()
     .get("/schools", staff, async (c) => c.json(await service.listSchools()))
     .post("/schools", staff, zv("json", schoolBody), async (c) => c.json(await service.createSchool(c.req.valid("json")), 201))
-    .put("/schools/:id", staff, zv("json", schoolPatch), async (c) => c.json(await service.updateSchool(uuid(c.req.param("id"), "ไม่พบโรงเรียน"), c.req.valid("json"))))
+    .put("/schools/:id", staff, zv("json", schoolPatch), async (c) => c.json(await service.updateSchool(uuid(c.req.param("id"), "School not found"), c.req.valid("json"))))
     .get("/trips", staff, zv("query", tripQuery), async (c) => c.json(await service.listTrips(c.req.valid("query"), viewerOf(c))))
     .post("/trips", staff, zv("json", tripBody), async (c) => c.json(await service.createTrip(c.req.valid("json"), c.get("user").sub, viewerOf(c)), 201))
-    .put("/trips/:id", staff, zv("json", tripPatch), async (c) => c.json(await service.updateTrip(uuid(c.req.param("id"), "ไม่พบเที่ยวนี้"), c.req.valid("json"), viewerOf(c))))
+    .put("/trips/:id", staff, zv("json", tripPatch), async (c) => c.json(await service.updateTrip(uuid(c.req.param("id"), "Trip not found"), c.req.valid("json"), viewerOf(c))))
     .delete("/trips/:id", staff, async (c) => {
-      await service.deleteTrip(uuid(c.req.param("id"), "ไม่พบเที่ยวนี้"));
+      await service.deleteTrip(uuid(c.req.param("id"), "Trip not found"));
       return c.body(null, 204);
     });
 }

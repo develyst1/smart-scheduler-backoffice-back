@@ -8,9 +8,9 @@ import { dbSlipConfirmStore, type SlipConfirmStore } from "./slip-confirm.store"
 type MySlip = Pick<SalaryService, "mySlip">;
 type PeriodReads = Pick<SalaryService, "getPeriod" | "listEntriesPeople">;
 
-const LOCKED_MSG = "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้"; // the same words as the pay run's own LOCKED
-const NO_TEACHER_MSG = "บัญชีนี้ไม่มีสลิปเงินเดือนของครู"; // the same words as GET /salary/my-slip
-const NO_SLIP_MSG = "ไม่พบสลิปของงวดนี้";
+const LOCKED_MSG = "This period is locked and cannot be edited"; // the same words as the pay run's own LOCKED
+const NO_TEACHER_MSG = "This account has no coach salary slip"; // the same words as GET /salary/my-slip
+const NO_SLIP_MSG = "No slip for this period";
 
 // ───────────── the store a service is wired to (tests register an in-memory one; production = the db store) ─────────────
 const stores = new WeakMap<object, SlipConfirmStore>();

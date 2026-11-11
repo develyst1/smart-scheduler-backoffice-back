@@ -69,7 +69,7 @@ export function makeSalaryRoutes(service: SalaryService) {
     // never by anything the caller supplies. No teacherId on the token (e.g. an admin / the dev ceo) -> 403 NO_TEACHER. No slip -> 200 {slip:null}.
     .get("/my-slip", requireRole("ceo", "admin", "coach"), zValidator("query", mySlipQuery), async (c) => {
       const teacherId = c.get("user").teacherId;
-      if (!teacherId) throw new ApiException(403, "NO_TEACHER", "บัญชีนี้ไม่มีสลิปเงินเดือนของครู");
+      if (!teacherId) throw new ApiException(403, "NO_TEACHER", "This account has no coach salary slip");
       const { year, month } = c.req.valid("query");
       return c.json(await service.mySlip(teacherId, year, month));
     })
@@ -80,7 +80,7 @@ export function makeSalaryRoutes(service: SalaryService) {
     .get("/entries/people", requireRole("admin", "ceo"), async (c) => c.json(await service.listEntriesPeople()))
     .post("/entries", requireRole("admin"), zValidator("json", entryBody), async (c) => {
       const b = c.req.valid("json");
-      return c.json(await service.addEntry({ ...b, teacherId: uuid(b.teacherId, "ไม่พบครู") }, c.get("user").sub), 201);
+      return c.json(await service.addEntry({ ...b, teacherId: uuid(b.teacherId, "Coach not found") }, c.get("user").sub), 201);
     })
     // 🔻 TASK-885 (R1.7): the Daily Training Report — per day, each coach's hours and that day's derived pay. CEO only, read-only. Logic: services/daily-report.service.ts
     .get("/daily", ceo, async (c) => c.json(await buildDailyReport(c.req.query("date") ?? "", service)))
@@ -90,52 +90,52 @@ export function makeSalaryRoutes(service: SalaryService) {
     .get("/reports/teaching.xlsx", ceo, async (c) => teachingXlsxFor(periodIdOf(c.req.query("periodId"), uuid), service))
     .get("/reports/pay.xlsx", ceo, async (c) => payXlsxFor(periodIdOf(c.req.query("periodId"), uuid), service))
     // 🔻 TASK-887 / SPEC-102 E4b: the CEO "remind now" - the unconfirmed list (names + draft/none, no pay) + SB's send result. Logic: services/slip-confirm.service.ts
-    .post("/periods/:id/remind", ceo, async (c) => c.json(await remindPeriodFor(service, uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
+    .post("/periods/:id/remind", ceo, async (c) => c.json(await remindPeriodFor(service, uuid(c.req.param("id"), "Pay period not found"))))
     .get("/periods", ceo, async (c) => c.json(await service.listPeriods()))
     .post("/periods", ceo, zValidator("json", createPeriodBody), async (c) => {
       const { year, month } = c.req.valid("json");
       return c.json(await service.createPeriod(year, month), 201);
     })
-    .post("/periods/:id/run", ceo, async (c) => c.json(await service.runPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
+    .post("/periods/:id/run", ceo, async (c) => c.json(await service.runPeriod(uuid(c.req.param("id"), "Pay period not found"))))
     // 🔻 TASK-867 (Brew, Team C): Bonus 50 / 100 candidates → auto pay lines. Idempotent; 409 LOCKED on a locked period. Logic: services/bonus-lines.service.ts
-    .post("/periods/:id/apply-bonus", ceo, async (c) => c.json(await applyBonusLinesFor(service, uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"), c.get("user").sub)))
+    .post("/periods/:id/apply-bonus", ceo, async (c) => c.json(await applyBonusLinesFor(service, uuid(c.req.param("id"), "Pay period not found"), c.get("user").sub)))
     // 🔻 TASK-868 (Brew, Team C): trips → transport auto pay lines. CEO only. Idempotent; 409 LOCKED. Logic: services/transport.service.ts
-    .post("/periods/:id/apply-transport", ceo, async (c) => c.json(await transportServiceFor(service).applyTransportLines(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"), c.get("user").sub)))
+    .post("/periods/:id/apply-transport", ceo, async (c) => c.json(await transportServiceFor(service).applyTransportLines(uuid(c.req.param("id"), "Pay period not found"), c.get("user").sub)))
     // 🔻 TASK-921 (Bob, Team B): the period's product-sale lines → Commission pay lines (own shares + the FT pool). CEO only. 409 LOCKED. Logic: services/commission-lines.service.ts
-    .post("/periods/:id/apply-commission", ceo, async (c) => c.json(await applyCommissionLinesFor(service, uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"), c.get("user").sub)))
-    .get("/periods/:id", ceo, async (c) => c.json(await service.getPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
-    .post("/periods/:id/lock", ceo, async (c) => c.json(await service.lockPeriod(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"))))
+    .post("/periods/:id/apply-commission", ceo, async (c) => c.json(await applyCommissionLinesFor(service, uuid(c.req.param("id"), "Pay period not found"), c.get("user").sub)))
+    .get("/periods/:id", ceo, async (c) => c.json(await service.getPeriod(uuid(c.req.param("id"), "Pay period not found"))))
+    .post("/periods/:id/lock", ceo, async (c) => c.json(await service.lockPeriod(uuid(c.req.param("id"), "Pay period not found"))))
     .get("/periods/:id/export", ceo, async (c) => {
-      const { filename, body } = await service.exportCsv(uuid(c.req.param("id"), "ไม่พบงวดเงินเดือน"));
+      const { filename, body } = await service.exportCsv(uuid(c.req.param("id"), "Pay period not found"));
       return new Response(body, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${filename}"` } });
     })
     // 🔻 TASK-879: Payment Detail export of one slip. CEO only (never admin / coach). Logic: services/slip-export.service.ts + lib/slip-sections.ts
-    .get("/slips/:id/export.xlsx", ceo, async (c) => exportSlip(await service.getSlip(uuid(c.req.param("id"), "ไม่พบสลิป")), "xlsx"))
-    .get("/slips/:id/export.pdf", ceo, async (c) => exportSlip(await service.getSlip(uuid(c.req.param("id"), "ไม่พบสลิป")), "pdf"))
-    .get("/slips/:id", ceo, async (c) => c.json(await service.getSlip(uuid(c.req.param("id"), "ไม่พบสลิป"))))
+    .get("/slips/:id/export.xlsx", ceo, async (c) => exportSlip(await service.getSlip(uuid(c.req.param("id"), "Slip not found")), "xlsx"))
+    .get("/slips/:id/export.pdf", ceo, async (c) => exportSlip(await service.getSlip(uuid(c.req.param("id"), "Slip not found")), "pdf"))
+    .get("/slips/:id", ceo, async (c) => c.json(await service.getSlip(uuid(c.req.param("id"), "Slip not found"))))
     .post("/slips/:id/lines", ceo, zValidator("json", lineBody), async (c) => {
       const actor = c.get("user").sub;
-      return c.json(await service.addLine(uuid(c.req.param("id"), "ไม่พบสลิป"), c.req.valid("json"), actor), 201);
+      return c.json(await service.addLine(uuid(c.req.param("id"), "Slip not found"), c.req.valid("json"), actor), 201);
     })
     .post("/slips/:id/ot", ceo, zValidator("json", otBody), async (c) => {
       const actor = c.get("user").sub;
-      return c.json(await service.addOt(uuid(c.req.param("id"), "ไม่พบสลิป"), c.req.valid("json"), actor), 201);
+      return c.json(await service.addOt(uuid(c.req.param("id"), "Slip not found"), c.req.valid("json"), actor), 201);
     })
     .post("/slips/:id/merit", ceo, zValidator("json", meritBody), async (c) => {
       const actor = c.get("user").sub;
-      return c.json(await service.addMerit(uuid(c.req.param("id"), "ไม่พบสลิป"), c.req.valid("json"), actor), 201);
+      return c.json(await service.addMerit(uuid(c.req.param("id"), "Slip not found"), c.req.valid("json"), actor), 201);
     })
     .delete("/slips/:id/lines/:lineId", ceo, async (c) => {
-      await service.removeLine(uuid(c.req.param("id"), "ไม่พบสลิป"), uuid(c.req.param("lineId"), "ไม่พบรายการ"));
+      await service.removeLine(uuid(c.req.param("id"), "Slip not found"), uuid(c.req.param("lineId"), "Line not found"));
       return c.body(null, 204);
     })
     .get("/profiles", ceo, async (c) => c.json(await service.listProfiles()))
     .put("/profiles/:teacherId", ceo, zValidator("json", profileBody), async (c) =>
-      c.json(await service.setProfile(uuid(c.req.param("teacherId"), "ไม่พบครู"), c.req.valid("json"))),
+      c.json(await service.setProfile(uuid(c.req.param("teacherId"), "Coach not found"), c.req.valid("json"))),
     )
-    .get("/profiles/:teacherId/fl-rates", ceo, async (c) => c.json(await service.getFlRates(uuid(c.req.param("teacherId"), "ไม่พบครู"))))
+    .get("/profiles/:teacherId/fl-rates", ceo, async (c) => c.json(await service.getFlRates(uuid(c.req.param("teacherId"), "Coach not found"))))
     .put("/profiles/:teacherId/fl-rates/:classType", ceo, zValidator("json", flRateBody), async (c) =>
-      c.json(await service.setFlRate(uuid(c.req.param("teacherId"), "ไม่พบครู"), c.req.param("classType") ?? "", c.req.valid("json").rate)),
+      c.json(await service.setFlRate(uuid(c.req.param("teacherId"), "Coach not found"), c.req.param("classType") ?? "", c.req.valid("json").rate)),
     );
 }
 

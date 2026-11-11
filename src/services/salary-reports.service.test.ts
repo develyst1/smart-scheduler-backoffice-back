@@ -34,7 +34,7 @@ function teachingDeps(o: { profiles: Prof[]; people?: string[]; rows: Record<str
   const deps: Required<Pick<ReportDeps, "getPeriod" | "listProfiles" | "listEntriesPeople" | "collectRows">> & Pick<ReportDeps, "getSlip"> = {
     getPeriod: async (id, opts) => {
       calls.getPeriod.push([id, opts]);
-      if (o.period === null) throw notFound("ไม่พบงวดเงินเดือน");
+      if (o.period === null) throw notFound("Pay period not found");
       return { period: o.period ?? PERIOD, slips: [] };
     },
     getSlip: async () => ({ baseAmount: 0, total: 0, lines: [] }),

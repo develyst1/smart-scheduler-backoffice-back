@@ -16,7 +16,7 @@ function sameToken(given: string | undefined, expected: string | undefined): boo
   return a.length === b.length && timingSafeEqual(a, b);
 }
 export async function strictServiceToken(c: Context, next: Next) {
-  if (!sameToken(c.req.header("X-Service-Token"), configuredServiceToken())) throw unauthorized("service token ไม่ถูกต้อง");
+  if (!sameToken(c.req.header("X-Service-Token"), configuredServiceToken())) throw unauthorized("Invalid service token");
   await next();
 }
 

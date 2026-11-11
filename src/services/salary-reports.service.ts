@@ -41,7 +41,7 @@ export const reportFilename = (kind: "teaching" | "pay", p: { year: number; mont
 /** The `periodId` query value: required (400), then the router's own uuid rule (a malformed id is «not found», never a database error). */
 export function periodIdOf(raw: string | undefined, uuid: (v: string | undefined, what: string) => string): string {
   if (!raw) throw badRequest("periodId is required");
-  return uuid(raw, "ไม่พบงวดเงินเดือน");
+  return uuid(raw, "Pay period not found");
 }
 
 function reportPeriod(p: { id: string; year: number; month: number; periodStart: string | null; periodEnd: string | null; status: string }): ReportPeriod {

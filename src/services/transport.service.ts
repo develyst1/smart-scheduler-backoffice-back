@@ -315,7 +315,7 @@ export interface TransportDeps {
   names?: (teacherIds: string[]) => Promise<Map<string, string>>;
 }
 
-const locked = () => conflict("LOCKED", "งวดนี้ถูกล็อกแล้ว แก้ไขไม่ได้");
+const locked = () => conflict("LOCKED", "This period is locked and cannot be edited");
 const REAL_DATE = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
 /** A validated km figure (positive, at most 2 decimals), else a 400. */
@@ -359,7 +359,7 @@ export function createTransportService(deps: TransportDeps) {
       try {
         return schoolDTO(await store.insertSchool({ name, distanceKm: input.distanceKm, active: input.active ?? true }));
       } catch (e) {
-        if (pgErrorCode(e) === "23505") throw conflict("SCHOOL_EXISTS", "มีโรงเรียนชื่อนี้อยู่แล้ว");
+        if (pgErrorCode(e) === "23505") throw conflict("SCHOOL_EXISTS", "A school with this name already exists");
         throw e;
       }
     },
@@ -373,10 +373,10 @@ export function createTransportService(deps: TransportDeps) {
       if (patch.active !== undefined) clean.active = patch.active;
       try {
         const s = await store.updateSchool(id, clean);
-        if (!s) throw notFound("ไม่พบโรงเรียน");
+        if (!s) throw notFound("School not found");
         return schoolDTO(s);
       } catch (e) {
-        if (pgErrorCode(e) === "23505") throw conflict("SCHOOL_EXISTS", "มีโรงเรียนชื่อนี้อยู่แล้ว");
+        if (pgErrorCode(e) === "23505") throw conflict("SCHOOL_EXISTS", "A school with this name already exists");
         throw e;
       }
     },
@@ -385,7 +385,7 @@ export function createTransportService(deps: TransportDeps) {
     /** A period's trips (the R1.4 range), optionally one person's. 404 for an unknown period. */
     async listTrips(q: { periodId: string; teacherId?: string }, viewer: Viewer) {
       const { period } = await salary.getPeriod(q.periodId);
-      if (!period.periodStart || !period.periodEnd) throw badRequest("งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+      if (!period.periodStart || !period.periodEnd) throw badRequest("This period has no date range (period_start / period_end)");
       const names = await schoolNames();
       const rows = await store.listTrips({ from: period.periodStart, to: period.periodEnd }, q.teacherId);
       return rows.map((t) => tripDTO(t, names.get(t.schoolId) ?? "", viewer));
@@ -415,7 +415,7 @@ export function createTransportService(deps: TransportDeps) {
      */
     async updateTrip(id: string, patch: { date?: string; schoolId?: string; roundTrip?: boolean; km?: number; note?: string | null }, viewer: Viewer) {
       const cur = await store.getTrip(id);
-      if (!cur) throw notFound("ไม่พบเที่ยวนี้");
+      if (!cur) throw notFound("Trip not found");
       await assertOpenOn(cur.date); // the period it is in now…
       if (patch.date !== undefined) await assertOpenOn(patch.date); // …and the one it moves to
       const schoolId = patch.schoolId ?? cur.schoolId;
@@ -434,12 +434,12 @@ export function createTransportService(deps: TransportDeps) {
         note: patch.note === undefined ? undefined : patch.note?.trim() ? patch.note.trim() : null,
         vehicle: cur.vehicle ?? (await vehicleOf(cur.teacherId)) ?? undefined,
       });
-      if (!next) throw notFound("ไม่พบเที่ยวนี้");
+      if (!next) throw notFound("Trip not found");
       return tripOut(next, viewer);
     },
     async deleteTrip(id: string) {
       const cur = await store.getTrip(id);
-      if (!cur) throw notFound("ไม่พบเที่ยวนี้");
+      if (!cur) throw notFound("Trip not found");
       await assertOpenOn(cur.date);
       await store.deleteTrip(id);
     },
@@ -450,7 +450,7 @@ export function createTransportService(deps: TransportDeps) {
       const overview = await salary.getPeriod(periodId); // lazy lock applied here; 404 if unknown
       if (overview.period.status === "locked") throw locked();
       const { periodStart, periodEnd } = overview.period;
-      if (!periodStart || !periodEnd) throw badRequest("งวดนี้ไม่มีช่วงวันที่ (period_start / period_end)");
+      if (!periodStart || !periodEnd) throw badRequest("This period has no date range (period_start / period_end)");
 
       const trips = await store.listTrips({ from: periodStart, to: periodEnd });
       const names = await schoolNames();

@@ -11,7 +11,7 @@ import { unauthorized } from "../lib/http";
 import { checkLogin, findBoUserByUsername, type BoUserRow } from "../services/bo-user.service";
 import type { FoCredential } from "../services/bo-user-admin.service";
 
-const WRONG = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"; // ONE sentence for unknown / wrong / inactive
+const WRONG = "Wrong username or password."; // ONE sentence for unknown / wrong / inactive
 
 /** `lookup` is injectable so the route is testable without a database. */
 export function makeAuthRoutes(lookup: (username: string) => Promise<BoUserRow | undefined> = findBoUserByUsername, fo?: (foUserId: string) => Promise<FoCredential | undefined>) {
